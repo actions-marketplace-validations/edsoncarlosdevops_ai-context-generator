@@ -1,0 +1,15 @@
+jobs:
+  - job: GenerateAIContext
+    displayName: 'Generate AI Context Files'
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+      - task: UsePythonVersion@0
+        inputs:
+          versionSpec: '3.12'
+      - script: |
+          pip install ai-context-generator
+          ai-context-generator generate --workspace $(Build.SourcesDirectory) --api-key $(AI_API_KEY) --model $(MODEL)
+        displayName: 'Generate AGENTS.md and context files'
+        env:
+          AI_API_KEY: $(AI_API_KEY)

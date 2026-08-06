@@ -1,0 +1,19 @@
+name: AI PR Review
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: edsoncarlosdevops/ai-pr-reviewer@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          deepseek_api_key: ${{ secrets.DEEPSEEK_API_KEY }}
+          model: deepseek-chat

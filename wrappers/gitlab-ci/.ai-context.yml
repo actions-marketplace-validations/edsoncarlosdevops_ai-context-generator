@@ -1,0 +1,12 @@
+generator:ai-context:
+  stage: docs
+  image: python:3.12-slim
+  rules:
+    - when: manual
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - pip install ai-context-generator
+    - ai-context-generator generate --workspace $CI_PROJECT_DIR --api-key $AI_API_KEY --model ${MODEL:-deepseek-chat}
+  artifacts:
+    paths: [AGENTS.md, .cursorrules, CLAUDE.md]
+    expire_in: 7 days

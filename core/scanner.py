@@ -4,6 +4,22 @@ from pathlib import Path
 from collections import Counter
 import re
 
+# Maps known AI tool config files to a tool name
+AI_TOOL_SIGNATURES: dict[str, str] = {
+    ".cursorrules":                          "cursor",
+    ".windsurfrules":                        "windsurf",
+    ".clinerules":                           "cline",
+    ".rules":                                "zed",
+    "CONVENTIONS.md":                        "aider",
+    "CLAUDE.md":                             "claude",
+    ".github/copilot-instructions.md":       "copilot",
+    ".amazonq/rules/project-rules.md":       "amazonq",
+    ".continue/rules.md":                    "continue",
+    ".continue/config.json":                 "continue",
+    "AGENTS.md":                             "antigravity",
+}
+
+
 @dataclass
 class ScanResult:
     total_files: int
@@ -15,6 +31,7 @@ class ScanResult:
     has_tests: bool
     test_commands: list[str]
     build_commands: list[str]
+    detected_ai_tools: list[str]  # Tools already configured in this repo
 
 class CodebaseScanner:
     def __init__(self, workspace_path: Path, exclude_dirs: list[str], max_file_size_kb: int):
@@ -43,6 +60,12 @@ class CodebaseScanner:
         has_tests = False
         test_commands: list[str] = []
         build_commands: list[str] = []
+        detected_ai_tools: set[str] = set()
+
+        # Check top-level AI tool config files
+        for rel_path, tool_name in AI_TOOL_SIGNATURES.items():
+            if (self.workspace_path / rel_path).exists():
+                detected_ai_tools.add(tool_name)
         
         for root, dirs, files in os.walk(self.workspace_path):
             # Exclude directories
@@ -114,7 +137,8 @@ class CodebaseScanner:
             existing_agents_md=existing_agents_md,
             has_tests=has_tests,
             test_commands=list(set(test_commands)),
-            build_commands=list(set(build_commands))
+            build_commands=list(set(build_commands)),
+            detected_ai_tools=sorted(detected_ai_tools),
         )
 
     def _parse_manifest(self, file_path: Path, filename: str) -> tuple[list[str], list[str], list[str]]:

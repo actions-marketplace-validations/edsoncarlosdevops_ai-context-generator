@@ -69,8 +69,26 @@ class ContextGenerator:
             
         bridge_files = []
         if write_agents:
-            bridge_writer = BridgeWriter(self.workspace_path, self.config.output, profile)
+            # Smart bridge selection: only generate bridges for tools already used in this project.
+            # If no tools are detected, generate all bridges (first-time setup).
+            effective_output = self.config.output
+            if scan_result.detected_ai_tools:
+                from dataclasses import replace as dc_replace
+                effective_output = dc_replace(
+                    self.config.output,
+                    cursorrules="cursor" in scan_result.detected_ai_tools,
+                    windsurfrules="windsurf" in scan_result.detected_ai_tools,
+                    clinerules="cline" in scan_result.detected_ai_tools,
+                    zed_rules="zed" in scan_result.detected_ai_tools,
+                    aider_conventions="aider" in scan_result.detected_ai_tools,
+                    claude_md="claude" in scan_result.detected_ai_tools,
+                    copilot_instructions="copilot" in scan_result.detected_ai_tools,
+                    amazonq_rules="amazonq" in scan_result.detected_ai_tools,
+                    continue_rules="continue" in scan_result.detected_ai_tools,
+                )
+            bridge_writer = BridgeWriter(self.workspace_path, effective_output, profile)
             bridge_files = bridge_writer.write_all()
+
             
         total = sum(scan_result.language_counts.values())
         lang_percs = ""

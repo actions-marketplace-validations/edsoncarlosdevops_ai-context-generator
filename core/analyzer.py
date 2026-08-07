@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from core.scanner import ScanResult
 
+
 @dataclass
 class ProjectProfile:
     primary_language: str
@@ -17,56 +18,174 @@ class ProjectProfile:
     test_commands: List[str]
     build_commands: List[str]
 
+
+# Maps dependency keyword → human-readable framework name
+FRAMEWORK_SIGNALS: dict[str, str] = {
+    "fastapi": "FastAPI",
+    "django": "Django",
+    "flask": "Flask",
+    "tornado": "Tornado",
+    "starlette": "Starlette",
+    "express": "Express",
+    "koa": "Koa",
+    "hapi": "Hapi.js",
+    "nestjs": "NestJS",
+    "@nestjs": "NestJS",
+    "next": "Next.js",
+    "nuxt": "Nuxt.js",
+    "react": "React",
+    "vue": "Vue.js",
+    "@angular": "Angular",
+    "angular": "Angular",
+    "svelte": "Svelte",
+    "spring": "Spring Boot",
+    "rails": "Ruby on Rails",
+    "sinatra": "Sinatra",
+    "gin": "Gin",
+    "fiber": "Fiber",
+    "echo": "Echo",
+    "actix": "Actix-Web",
+    "axum": "Axum",
+    "rocket": "Rocket",
+    "ros2": "ROS 2",
+    "rclpy": "ROS 2",
+    "rclcpp": "ROS 2",
+    "mcap": "MCAP",
+    "duckdb": "DuckDB",
+    "apache-airflow": "Apache Airflow",
+    "airflow": "Apache Airflow",
+    "prefect": "Prefect",
+    "dagster": "Dagster",
+    "dbt": "dbt",
+    "pyspark": "Apache Spark",
+    "kafka": "Apache Kafka",
+    "confluent": "Confluent Kafka",
+    "celery": "Celery",
+    "sqlalchemy": "SQLAlchemy",
+    "alembic": "Alembic",
+    "prisma": "Prisma",
+    "mongoose": "Mongoose",
+    "typeorm": "TypeORM",
+    "stripe": "Stripe",
+    "plaid": "Plaid",
+    "braintree": "Braintree",
+    "paypal": "PayPal",
+    "terraform": "Terraform",
+    "pulumi": "Pulumi",
+    "ansible": "Ansible",
+    "pytest": "pytest",
+    "jest": "Jest",
+    "vitest": "Vitest",
+    "cypress": "Cypress",
+    "playwright": "Playwright",
+}
+
+# Maps dependency keyword → domain
+DOMAIN_SIGNALS: dict[str, str] = {
+    "rclpy": "robotics", "rclcpp": "robotics", "ros2": "robotics", "mcap": "robotics",
+    "stripe": "fintech", "plaid": "fintech", "braintree": "fintech", "paypal": "fintech",
+    "pydantic-money": "fintech", "money": "fintech",
+    "apache-airflow": "data-engineering", "airflow": "data-engineering",
+    "pyspark": "data-engineering", "dbt": "data-engineering",
+    "prefect": "data-engineering", "dagster": "data-engineering",
+    "duckdb": "data-engineering", "pyarrow": "data-engineering",
+    "pandas": "data-engineering", "polars": "data-engineering",
+    "react": "web", "next": "web", "django": "web",
+    "flask": "web", "fastapi": "web", "express": "web",
+    "vue": "web", "@angular": "web", "svelte": "web",
+    "terraform": "devops", "pulumi": "devops", "ansible": "devops",
+    "zephyr": "embedded", "freertos": "embedded", "cmsis": "embedded",
+}
+
+# Infra detection
+INFRA_SIGNALS: dict[str, str] = {
+    "dockerfile": "Docker",
+    "docker-compose": "Docker Compose",
+    ".tf": "Terraform",
+    ".tfvars": "Terraform",
+    "helm": "Helm",
+    "k8s": "Kubernetes",
+    "kubernetes": "Kubernetes",
+    "chart.yaml": "Helm",
+    "values.yaml": "Helm",
+    "serverless.yml": "Serverless Framework",
+    "cdk": "AWS CDK",
+    "sam": "AWS SAM",
+}
+
+
 class ProjectAnalyzer:
+    """Converts raw ScanResult into a structured ProjectProfile for prompt construction."""
+
     def analyze(self, scan_result: ScanResult) -> ProjectProfile:
-        sorted_langs = sorted(scan_result.language_counts.items(), key=lambda x: x[1], reverse=True)
-        primary_lang = sorted_langs[0][0] if sorted_langs else "Unknown"
-        secondary_langs = [l[0] for l in sorted_langs[1:]]
+        # Language ranking: exclude YAML from primary if Python/C++ are present
+        sorted_langs = sorted(
+            scan_result.language_counts.items(), key=lambda x: x[1], reverse=True
+        )
+        code_langs = [(l, c) for l, c in sorted_langs if l not in ("YAML",)]
+        primary_lang = code_langs[0][0] if code_langs else (sorted_langs[0][0] if sorted_langs else "Unknown")
+        secondary_langs = [l for l, _ in (code_langs[1:] if code_langs else sorted_langs[1:])]
 
-        framework_map = {
-            'fastapi': 'FastAPI', 'ros2': 'ROS 2', 'terraform': 'Terraform',
-            'next': 'Next.js', 'react': 'React', 'django': 'Django',
-            'flask': 'Flask', 'express': 'Express', 'spring': 'Spring Boot',
-            'rails': 'Ruby on Rails', 'vue': 'Vue.js', 'angular': 'Angular'
-        }
-        frameworks = []
+        # Framework detection
         deps_lower = [d.lower() for d in scan_result.dependencies]
-        for k, v in framework_map.items():
-            if any(k in d for d in deps_lower):
-                frameworks.append(v)
-        frameworks = list(set(frameworks))
+        frameworks: list[str] = []
+        for keyword, label in FRAMEWORK_SIGNALS.items():
+            if any(keyword in dep for dep in deps_lower) and label not in frameworks:
+                frameworks.append(label)
 
-        infra_tools = []
-        for infra in scan_result.infra_files:
-            if 'Docker' in infra or 'docker' in infra: infra_tools.append('Docker')
-            if 'k8s' in infra or 'helm' in infra: infra_tools.append('Kubernetes')
-            if '.tf' in infra: infra_tools.append('Terraform')
-        infra_tools = list(set(infra_tools))
+        # Infra detection
+        infra_tools: list[str] = []
+        all_infra = " ".join(scan_result.infra_files).lower()
+        for signal, label in INFRA_SIGNALS.items():
+            if signal in all_infra and label not in infra_tools:
+                infra_tools.append(label)
 
-        cicd_platforms = []
+        # CI/CD detection
+        cicd_platforms: list[str] = []
         for cicd in scan_result.cicd_files:
-            if 'github' in cicd.lower(): cicd_platforms.append('GitHub Actions')
-            elif 'gitlab' in cicd.lower(): cicd_platforms.append('GitLab CI')
-            elif 'azure' in cicd.lower(): cicd_platforms.append('Azure DevOps')
-            elif 'jenkins' in cicd.lower(): cicd_platforms.append('Jenkins')
-        cicd_platforms = list(set(cicd_platforms))
+            cicd_l = cicd.lower()
+            if "github" in cicd_l and "GitHub Actions" not in cicd_platforms:
+                cicd_platforms.append("GitHub Actions")
+            elif "gitlab" in cicd_l and "GitLab CI" not in cicd_platforms:
+                cicd_platforms.append("GitLab CI")
+            elif "azure" in cicd_l and "Azure DevOps" not in cicd_platforms:
+                cicd_platforms.append("Azure DevOps")
+            elif "jenkins" in cicd_l and "Jenkins" not in cicd_platforms:
+                cicd_platforms.append("Jenkins")
 
-        arch_hints = []
-        if 'microservices' in str(scan_result.infra_files): arch_hints.append('microservices')
-        if any('api' in d for d in scan_result.dependencies): arch_hints.append('api')
+        # Architecture hints from directory names
+        arch_hints: list[str] = []
+        infra_str = " ".join(scan_result.infra_files + scan_result.cicd_files).lower()
+        if "microservice" in infra_str:
+            arch_hints.append("microservices")
+        if any("service" in d for d in deps_lower):
+            arch_hints.append("service-oriented")
+        if "pipeline" in " ".join(scan_result.cicd_files).lower():
+            arch_hints.append("data-pipeline")
+        if "mono" in infra_str:
+            arch_hints.append("monorepo")
 
-        domain = 'general'
-        if 'ROS 2' in frameworks or 'ros2' in deps_lower: domain = 'robotics'
-        elif 'stripe' in deps_lower or 'plaid' in deps_lower: domain = 'fintech'
-        elif 'react' in frameworks or 'django' in frameworks: domain = 'web'
-        elif 'pandas' in deps_lower or 'airflow' in deps_lower: domain = 'data-engineering'
-        elif 'Docker' in infra_tools and 'Terraform' in infra_tools: domain = 'devops'
+        # Domain detection — ordered by priority
+        domain = "general"
+        for keyword, detected_domain in DOMAIN_SIGNALS.items():
+            if any(keyword in dep for dep in deps_lower):
+                domain = detected_domain
+                break
 
-        security_risk_level = 'low'
-        if domain in ['fintech', 'robotics', 'devops'] or any(dep in deps_lower for dep in ['jwt', 'oauth', 'stripe']):
-            security_risk_level = 'high'
-        elif len(scan_result.dependencies) > 50:
-            security_risk_level = 'medium'
+        # Override domain from infra if IaC-heavy
+        if not any(f in frameworks for f in ["FastAPI", "Django", "React", "Next.js"]):
+            if "Terraform" in infra_tools or "Pulumi" in infra_tools:
+                domain = "devops"
+
+        # Security risk level
+        high_risk_domains = {"fintech", "robotics", "devops", "embedded"}
+        high_risk_deps = {"jwt", "oauth", "stripe", "plaid", "braintree", "crypto", "ssl", "tls"}
+        if domain in high_risk_domains or any(dep in deps_lower for dep in high_risk_deps):
+            security_risk_level = "high"
+        elif len(scan_result.dependencies) > 30:
+            security_risk_level = "medium"
+        else:
+            security_risk_level = "low"
 
         return ProjectProfile(
             primary_language=primary_lang,
@@ -80,5 +199,5 @@ class ProjectAnalyzer:
             existing_agents_md=scan_result.existing_agents_md,
             has_tests=scan_result.has_tests,
             test_commands=scan_result.test_commands,
-            build_commands=scan_result.build_commands
+            build_commands=scan_result.build_commands,
         )

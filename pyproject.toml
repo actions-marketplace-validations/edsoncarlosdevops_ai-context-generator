@@ -1,0 +1,3 @@
+
+[tool.setuptools.package-data]
+core = ["prompts/*.md"]

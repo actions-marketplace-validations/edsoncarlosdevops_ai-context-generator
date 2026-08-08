@@ -68,3 +68,4 @@ venv.bak/
 .vscode/
 *.swp
 *.swo
+.aider*

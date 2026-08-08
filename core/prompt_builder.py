@@ -1,11 +1,13 @@
 import json
-from pathlib import Path
 from dataclasses import asdict
+from importlib.resources import files
+
 from core.analyzer import ProjectProfile
 from core.config import AppConfig
 
 
-PROMPT_TEMPLATE_PATH = Path(__file__).parent.parent / "prompts" / "generate_agents.md"
+# Template ships inside the `core` package so it works when installed from PyPI.
+PROMPT_TEMPLATE_RESOURCE = "prompts/generate_agents.md"
 
 
 # Domain-specific security and architecture context injected into the prompt
@@ -73,7 +75,7 @@ class PromptBuilder:
 
     def __init__(self, config: AppConfig):
         self.config = config
-        self._template = PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
+        self._template = files("core").joinpath(PROMPT_TEMPLATE_RESOURCE).read_text(encoding="utf-8")
 
     def build(self, profile: ProjectProfile) -> str:
         profile_dict = asdict(profile)

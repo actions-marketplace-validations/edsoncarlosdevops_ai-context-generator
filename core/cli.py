@@ -3,8 +3,9 @@ import os
 import sys
 from pathlib import Path
 
+from core import __version__
 from core.analyzer import ProjectAnalyzer
-from core.config import load_config
+from core.config import BRIDGE_FLAG_TO_TOOL, load_config
 from core.generator import ContextGenerator
 from core.llm_client import LLMClient
 from core.prompt_builder import PromptBuilder
@@ -43,6 +44,7 @@ def main() -> int:
         prog="ai-context-generator",
         description="Scan a repository and generate AGENTS.md and AI context bridge files.",
     )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command")
     gen = subparsers.add_parser("generate", help="Generate AI context files")
 
@@ -104,6 +106,8 @@ def main() -> int:
         config.output.copilot_instructions = False
         config.output.amazonq_rules = False
         config.output.continue_rules = False
+        # Treat these as explicit user choices so auto-detection does not re-enable them.
+        config.explicit_output_keys.update(BRIDGE_FLAG_TO_TOOL.keys())
 
     # --- DRY RUN MODE ---
     if args.dry_run:
@@ -162,7 +166,12 @@ def main() -> int:
     print(f"  Language : {config.generator.language}\n")
 
     try:
-        llm = LLMClient(api_key, config.generator.model, config.generator.base_url)
+        llm = LLMClient(
+            api_key,
+            config.generator.model,
+            config.generator.base_url,
+            config.generator.max_tokens,
+        )
         generator = ContextGenerator(workspace_path, config, llm)
         result = generator.generate(force_replace=args.replace)
     except Exception as e:

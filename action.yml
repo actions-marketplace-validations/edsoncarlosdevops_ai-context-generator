@@ -53,38 +53,33 @@ runs:
       with:
         python-version: '3.12'
 
-    - name: Cache pip dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ai-context-generator-pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ai-context-generator-pip-${{ runner.os }}-
-
-    - name: Install ai-context-generator
+    - name: Install dependencies
       run: pip install -r ${{ github.action_path }}/requirements.txt -q
       shell: bash
 
     - name: Generate AI context files
       id: generate
+      shell: bash
+      env:
+        # Passed via env so the secret never appears on the command line.
+        AI_API_KEY: ${{ inputs.ai_api_key }}
       run: |
-        CMD="python ${{ github.action_path }}/core/cli.py generate \
-          --workspace ${{ github.workspace }} \
-          --api-key ${{ inputs.ai_api_key }} \
-          --model ${{ inputs.model }} \
-          --base-url ${{ inputs.base_url }} \
-          --language ${{ inputs.language }}"
-
+        # Run as a module from the action path so `core.*` imports resolve.
+        export PYTHONPATH="${{ github.action_path }}"
+        CMD=(python -m core.cli generate \
+          --workspace "${{ github.workspace }}" \
+          --model "${{ inputs.model }}" \
+          --base-url "${{ inputs.base_url }}" \
+          --language "${{ inputs.language }}")
         if [ "${{ inputs.replace }}" = "true" ]; then
-          CMD="$CMD --replace"
+          CMD+=(--replace)
         fi
-
         if [ "${{ inputs.no_bridge }}" = "true" ]; then
-          CMD="$CMD --no-bridge"
+          CMD+=(--no-bridge)
         fi
 
         echo "::group::ai-context-generator output"
-        eval $CMD
+        "${CMD[@]}"
         EXIT_CODE=$?
         echo "::endgroup::"
 
@@ -93,15 +88,19 @@ runs:
           exit $EXIT_CODE
         fi
 
-        # Check if AGENTS.md was actually modified
-        if git -C ${{ github.workspace }} diff --quiet HEAD -- AGENTS.md 2>/dev/null; then
+        # Detect whether any context file changed. `git status --porcelain` also
+        # catches brand-new (untracked) files, which `git diff` silently ignores.
+        CHANGED="$(git -C "${{ github.workspace }}" status --porcelain -- \
+          AGENTS.md .ai-context.sig .cursorrules .windsurfrules .clinerules .rules \
+          CONVENTIONS.md CLAUDE.md .github/copilot-instructions.md \
+          .amazonq/rules/project-rules.md .continue/rules.md 2>/dev/null)"
+        if [ -z "$CHANGED" ]; then
           echo "agents_md_written=false" >> "$GITHUB_OUTPUT"
-          echo "::notice::AGENTS.md is already up-to-date. No PR will be created."
+          echo "::notice::AI context files are already up-to-date. No PR will be created."
         else
           echo "agents_md_written=true" >> "$GITHUB_OUTPUT"
-          echo "::notice::AGENTS.md was updated successfully."
+          echo "::notice::AI context files were updated successfully."
         fi
-      shell: bash
 
     - name: Create Pull Request
       if: ${{ inputs.create_pr == 'true' && steps.generate.outputs.agents_md_written == 'true' }}

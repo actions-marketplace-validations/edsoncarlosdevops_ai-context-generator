@@ -9,6 +9,7 @@ class GeneratorConfig:
     base_url: str = "https://api.deepseek.com"
     language: str = "english"
     max_lines: int = 150
+    max_tokens: int = 4096
 
 
 @dataclass
@@ -32,6 +33,21 @@ class OutputConfig:
     create_pr: bool = False
 
 
+# Maps each bridge flag to the tool name reported by the scanner. Used to
+# auto-select bridge files for tools actually present in a repository.
+BRIDGE_FLAG_TO_TOOL: dict[str, str] = {
+    "cursorrules": "cursor",
+    "windsurfrules": "windsurf",
+    "clinerules": "cline",
+    "zed_rules": "zed",
+    "aider_conventions": "aider",
+    "claude_md": "claude",
+    "copilot_instructions": "copilot",
+    "amazonq_rules": "amazonq",
+    "continue_rules": "continue",
+}
+
+
 @dataclass
 class ScanConfig:
     exclude_dirs: list[str] = field(
@@ -53,6 +69,17 @@ class AppConfig:
     generator: GeneratorConfig = field(default_factory=GeneratorConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     scan: ScanConfig = field(default_factory=ScanConfig)
+    # Keys the user set explicitly (via .ai_context.toml / CLI flags) so that
+    # auto-detection never overrides an intentional configuration.
+    explicit_output_keys: set[str] = field(default_factory=set)
+
+
+def _filter_known(section: str, data: dict, fields: set[str]) -> dict:
+    """Keep known keys, warn loudly on typos instead of silently dropping the section."""
+    unknown = set(data) - fields
+    for key in sorted(unknown):
+        print(f"Warning: unknown option '{key}' in [{section}] of the config — ignoring it.")
+    return {k: v for k, v in data.items() if k in fields}
 
 
 def load_config(workspace_path: Path, config_path: Path | None = None) -> AppConfig:
@@ -66,14 +93,19 @@ def load_config(workspace_path: Path, config_path: Path | None = None) -> AppCon
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
 
-        gen_data = data.get("generator", {})
+        gen_fields = set(GeneratorConfig.__dataclass_fields__)
+        out_fields = set(OutputConfig.__dataclass_fields__)
+        scan_fields = set(ScanConfig.__dataclass_fields__)
+
+        gen_data = _filter_known("generator", data.get("generator", {}), gen_fields)
         out_data = data.get("output", {})
-        scan_data = data.get("scan", {})
+        scan_data = _filter_known("scan", data.get("scan", {}), scan_fields)
 
         return AppConfig(
             generator=GeneratorConfig(**gen_data),
-            output=OutputConfig(**out_data),
+            output=OutputConfig(**_filter_known("output", out_data, out_fields)),
             scan=ScanConfig(**scan_data),
+            explicit_output_keys=set(out_data),
         )
     except Exception as e:
         print(f"Warning: Failed to load config from {config_path}: {e}")

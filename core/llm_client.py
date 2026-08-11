@@ -1,3 +1,4 @@
+import re
 import time
 
 from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
@@ -13,10 +14,21 @@ class LLMClient:
     # Only these error types warrant a retry
     _RETRYABLE = (RateLimitError, APIConnectionError)
 
+    _FENCE_RE = re.compile(r"^```(?:markdown|md)?\s*\n?(.*?)\n?```\s*$", re.DOTALL)
+
     def __init__(self, api_key: str, model: str, base_url: str, max_tokens: int = 4096):
         self.model = model
         self.max_tokens = max_tokens
         self.client = OpenAI(api_key=api_key, base_url=base_url)
+
+    @staticmethod
+    def _sanitize(content: str | None) -> str:
+        """Strip stray markdown fences and enforce a clean, non-empty result."""
+        content = (content or "").strip()
+        match = LLMClient._FENCE_RE.match(content)
+        if match:
+            content = match.group(1).strip()
+        return content
 
     def generate(self, prompt: str) -> str:
         max_retries = 3
@@ -40,7 +52,16 @@ class LLMClient:
                     temperature=0.2,
                     max_tokens=self.max_tokens,
                 )
-                return response.choices[0].message.content or ""
+                choice = response.choices[0]
+                if choice.finish_reason == "length":
+                    raise LLMError(
+                        f"LLM output was truncated (max_tokens={self.max_tokens}). "
+                        "Increase max_tokens in your config to fit the requested line budget."
+                    )
+                content = self._sanitize(choice.message.content)
+                if not content:
+                    raise LLMError("LLM returned empty content.")
+                return content
 
             except self._RETRYABLE as e:
                 last_error = e
@@ -67,6 +88,9 @@ class LLMClient:
                     time.sleep(wait)
                 else:
                     raise LLMError(f"LLM API error (HTTP {e.status_code}): {e.message}") from e
+
+            except LLMError:
+                raise
 
             except Exception as e:
                 raise LLMError(f"Unexpected LLM error: {e}") from e

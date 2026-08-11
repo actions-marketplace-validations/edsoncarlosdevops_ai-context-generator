@@ -1,8 +1,8 @@
-import pytest
 from pathlib import Path
-from core.config import OutputConfig
+
 from core.analyzer import ProjectProfile
 from core.bridge_writer import BridgeWriter
+from core.config import OutputConfig
 
 
 def test_bridge_writer_all_tools(tmp_path: Path):

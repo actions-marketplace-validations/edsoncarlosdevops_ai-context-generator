@@ -60,6 +60,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Linters / caches
+.ruff_cache/
+
 # Configuration
 .ai_context.toml
 

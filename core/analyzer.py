@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 
 from core.scanner import ScanResult
@@ -17,6 +18,16 @@ class ProjectProfile:
     has_tests: bool
     test_commands: list[str]
     build_commands: list[str]
+
+
+def _matches(dep: str, keyword: str) -> bool:
+    """Boundary-aware, case-insensitive substring match.
+
+    'react' matches 'react-dom' and '@react/native', but not 'pyreact'.
+    This avoids the false positives produced by plain ``in`` matching.
+    """
+    needle = re.escape(keyword.lower())
+    return bool(re.search(rf"(?:^|[^a-z0-9]){needle}(?:[^a-z0-9]|$)", dep))
 
 
 # Maps dependency keyword → human-readable framework name
@@ -152,7 +163,7 @@ class ProjectAnalyzer:
         deps_lower = [d.lower() for d in scan_result.dependencies]
         frameworks: list[str] = []
         for keyword, label in FRAMEWORK_SIGNALS.items():
-            if any(keyword in dep for dep in deps_lower) and label not in frameworks:
+            if label not in frameworks and any(_matches(dep, keyword) for dep in deps_lower):
                 frameworks.append(label)
 
         # Infra detection
@@ -187,12 +198,32 @@ class ProjectAnalyzer:
         if "mono" in infra_str:
             arch_hints.append("monorepo")
 
-        # Domain detection — ordered by priority
-        domain = "general"
+        # Domain detection — most-voted domain wins; ties broken by priority
+        domain_scores: dict[str, int] = {}
         for keyword, detected_domain in DOMAIN_SIGNALS.items():
-            if any(keyword in dep for dep in deps_lower):
-                domain = detected_domain
-                break
+            if any(_matches(dep, keyword) for dep in deps_lower):
+                domain_scores[detected_domain] = domain_scores.get(detected_domain, 0) + 1
+
+        if domain_scores:
+            # More specific domains first (used as the tie-breaker)
+            domain_priority = [
+                "robotics",
+                "fintech",
+                "embedded",
+                "data-engineering",
+                "devops",
+                "web",
+                "general",
+            ]
+            domain = max(
+                domain_scores,
+                key=lambda d: (
+                    domain_scores[d],
+                    -domain_priority.index(d) if d in domain_priority else 0,
+                ),
+            )
+        else:
+            domain = "general"
 
         # Override domain from infra if IaC-heavy
         if not any(f in frameworks for f in ["FastAPI", "Django", "React", "Next.js"]):
@@ -202,7 +233,9 @@ class ProjectAnalyzer:
         # Security risk level
         high_risk_domains = {"fintech", "robotics", "devops", "embedded"}
         high_risk_deps = {"jwt", "oauth", "stripe", "plaid", "braintree", "crypto", "ssl", "tls"}
-        if domain in high_risk_domains or any(dep in deps_lower for dep in high_risk_deps):
+        if domain in high_risk_domains or any(
+            _matches(dep, k) for dep in deps_lower for k in high_risk_deps
+        ):
             security_risk_level = "high"
         elif len(scan_result.dependencies) > 30:
             security_risk_level = "medium"

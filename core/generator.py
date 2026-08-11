@@ -1,13 +1,17 @@
 import difflib
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
-from core.analyzer import ProjectAnalyzer
+from core.analyzer import ProjectAnalyzer, ProjectProfile
 from core.bridge_writer import BridgeWriter
-from core.config import AppConfig
+from core.config import BRIDGE_FLAG_TO_TOOL, AppConfig, OutputConfig
 from core.llm_client import LLMClient
 from core.prompt_builder import PromptBuilder
-from core.scanner import CodebaseScanner
+from core.scanner import CodebaseScanner, ScanResult
+
+SIGNATURE_FILE = ".ai-context.sig"
 
 
 @dataclass
@@ -35,6 +39,35 @@ class ContextGenerator:
         matcher = difflib.SequenceMatcher(None, old_text.splitlines(), new_text.splitlines())
         return 1.0 - matcher.ratio()
 
+    def _profile_signature(self, profile: ProjectProfile) -> str:
+        """Hash of everything that affects the generated AGENTS.md content."""
+        data = asdict(profile)
+        data.pop("existing_agents_md", None)  # changes with every write — not a profile signal
+        key = (
+            json.dumps(data, sort_keys=True, default=str)
+            + "|"
+            + self.config.generator.model
+            + "|"
+            + self.config.generator.language
+            + "|"
+            + str(self.config.generator.max_lines)
+            + "|"
+            + str(self.config.generator.max_tokens)
+        )
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+    def _bridge_config(self, scan_result: ScanResult) -> OutputConfig:
+        """Resolve bridge flags: explicit user config wins; otherwise auto-detect used tools."""
+        detected = set(scan_result.detected_ai_tools) - {"antigravity"}
+        if not detected:
+            return self.config.output
+        explicit = self.config.explicit_output_keys
+        overrides = {
+            flag: (tool in detected) if flag not in explicit else getattr(self.config.output, flag)
+            for flag, tool in BRIDGE_FLAG_TO_TOOL.items()
+        }
+        return replace(self.config.output, **overrides)
+
     def generate(self, force_replace: bool = False) -> GenerationResult:
         scanner = CodebaseScanner(
             self.workspace_path, self.config.scan.exclude_dirs, self.config.scan.max_file_size_kb
@@ -47,47 +80,45 @@ class ContextGenerator:
         prompt_builder = PromptBuilder(self.config)
         prompt = prompt_builder.build(profile)
 
-        agents_md_content = self.llm_client.generate(prompt)
-
         agents_md_path = self.workspace_path / "AGENTS.md"
-        write_agents = True
+        sig_path = self.workspace_path / SIGNATURE_FILE
+        stored_sig = sig_path.read_text(encoding="utf-8").strip() if sig_path.exists() else ""
+        current_sig = self._profile_signature(profile)
+
+        agents_md_content = ""
+        write_agents = False
         msg = ""
 
-        if not force_replace and profile.existing_agents_md:
-            delta = self._calculate_delta(profile.existing_agents_md, agents_md_content)
-            if delta <= 0.10:
-                write_agents = False
-                msg = "AGENTS.md already up-to-date, no changes needed."
-            else:
-                msg = f"Enriched AGENTS.md (delta: {delta:.1%})"
+        if not self.config.output.agents_md:
+            msg = "AGENTS.md generation disabled by config."
+        elif not force_replace and profile.existing_agents_md and stored_sig == current_sig:
+            # Nothing relevant changed since the last successful run — skip the paid LLM call.
+            msg = "AGENTS.md already up-to-date, no changes needed."
         else:
-            msg = "Created new AGENTS.md"
+            agents_md_content = self.llm_client.generate(prompt)
+            if not force_replace and profile.existing_agents_md:
+                delta = self._calculate_delta(profile.existing_agents_md, agents_md_content)
+                if delta <= 0.10:
+                    msg = "AGENTS.md already up-to-date, no changes needed."
+                else:
+                    write_agents = True
+                    msg = f"Enriched AGENTS.md (delta: {delta:.1%})"
+            else:
+                write_agents = True
+                msg = "Created new AGENTS.md"
 
         if write_agents and self.config.output.agents_md:
             agents_md_path.write_text(agents_md_content, encoding="utf-8")
 
-        bridge_files = []
-        if write_agents:
-            # Smart bridge selection: only generate bridges for tools already used in this project.
-            # If no tools are detected, generate all bridges (first-time setup).
-            effective_output = self.config.output
-            if scan_result.detected_ai_tools:
-                from dataclasses import replace as dc_replace
+        # Persist the signature whenever this tool manages AGENTS.md, so unchanged
+        # repositories skip the LLM call on subsequent runs.
+        if self.config.output.agents_md and (write_agents or profile.existing_agents_md):
+            sig_path.write_text(current_sig + "\n", encoding="utf-8")
 
-                effective_output = dc_replace(
-                    self.config.output,
-                    cursorrules="cursor" in scan_result.detected_ai_tools,
-                    windsurfrules="windsurf" in scan_result.detected_ai_tools,
-                    clinerules="cline" in scan_result.detected_ai_tools,
-                    zed_rules="zed" in scan_result.detected_ai_tools,
-                    aider_conventions="aider" in scan_result.detected_ai_tools,
-                    claude_md="claude" in scan_result.detected_ai_tools,
-                    copilot_instructions="copilot" in scan_result.detected_ai_tools,
-                    amazonq_rules="amazonq" in scan_result.detected_ai_tools,
-                    continue_rules="continue" in scan_result.detected_ai_tools,
-                )
-            bridge_writer = BridgeWriter(self.workspace_path, effective_output, profile)
-            bridge_files = bridge_writer.write_all()
+        # Bridges are independent of the AGENTS.md write: regenerate when missing,
+        # respecting explicit config and tool auto-detection.
+        bridge_writer = BridgeWriter(self.workspace_path, self._bridge_config(scan_result), profile)
+        bridge_files = bridge_writer.write_all()
 
         total = sum(scan_result.language_counts.values())
         lang_percs = ""

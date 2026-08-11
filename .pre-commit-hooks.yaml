@@ -1,8 +1,8 @@
 - id: ai-context-generator
   name: AI Context Generator
-  description: Scan repository and update AGENTS.md + AI tool bridge files
+  description: Scan repository and update AGENTS.md + AI tool bridge files. Requires AI_API_KEY (or OPENAI_API_KEY) in the environment. The LLM call is skipped automatically when the repository profile is unchanged.
   entry: ai-context-generator generate
   language: python
-  types: [python]
   pass_filenames: false
+  always_run: true
   additional_dependencies: ['openai>=1.0.0']

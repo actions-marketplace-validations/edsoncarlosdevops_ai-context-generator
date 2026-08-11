@@ -63,9 +63,9 @@ AGENTS.md ─── Single Source of Truth
      └──► CONVENTIONS.md        (Aider)
 ```
 
-**Smart detection:** The tool detects which AI tools are already configured in your project and only generates bridge files for those. On a first run with no existing files, it generates all of them.
+**Smart detection:** The tool detects which AI tools are already configured in your project and only generates bridge files for those. On a first run with no existing files, it generates all of them. Options you set explicitly in `.ai_context.toml` always take precedence over auto-detection.
 
-**Smart updates:** On re-runs, if your architecture hasn't changed significantly (less than 10% diff), no files are written — keeping your git history clean.
+**Smart updates (cost-saving):** The tool stores a lightweight `.ai-context.sig` signature file in your repo. When the detected project profile is unchanged, the paid LLM call is **skipped entirely** and the existing `AGENTS.md` is kept. When the profile does change, the generated content is compared with the current file — if the architecture hasn't changed significantly (less than 10% diff), no files are written, keeping your git history clean. Commit `.ai-context.sig` alongside `AGENTS.md` to benefit in CI.
 
 ---
 
@@ -111,10 +111,12 @@ ai-context-generator generate --workspace . --api-key $AI_API_KEY
 
 Add `ai-context-generator` to your `.pre-commit-config.yaml` to keep context files updated before every commit:
 
+> **Note:** the hook runs on every commit (`always_run`) and requires an API key via `AI_API_KEY` (or `OPENAI_API_KEY`) in the environment. It is cheap in practice — when the repository profile hasn't changed, the LLM call is skipped automatically.
+
 ```yaml
 repos:
   - repo: https://github.com/edsoncarlosdevops/ai-context-generator
-    rev: v1.0.0
+    rev: v1.2.0
     hooks:
       - id: ai-context-generator
 ```

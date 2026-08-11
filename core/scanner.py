@@ -45,13 +45,23 @@ class CodebaseScanner:
             ".ts": "TypeScript",
             ".tsx": "TypeScript React",
             ".js": "JavaScript",
+            ".jsx": "React JS",
+            ".mjs": "JavaScript",
+            ".cjs": "JavaScript",
             ".go": "Go",
             ".rs": "Rust",
             ".cpp": "C++",
             ".tf": "Terraform",
             ".java": "Java",
+            ".kt": "Kotlin",
+            ".kts": "Kotlin",
+            ".swift": "Swift",
             ".rb": "Ruby",
             ".cs": "C#",
+            ".php": "PHP",
+            ".scala": "Scala",
+            ".sh": "Shell",
+            ".dart": "Dart",
             ".yaml": "YAML",
             ".yml": "YAML",
         }
@@ -111,22 +121,26 @@ class CodebaseScanner:
                     test_commands.extend(tc)
                     build_commands.extend(bc)
 
+                # Path-relative string with forward slashes (works on every OS)
+                rel_file = file_path.relative_to(self.workspace_path)
+                rel_str = str(rel_file).lower()
+
                 # CI/CD detection
                 if file.endswith(".yml") or file.endswith(".yaml"):
-                    if "github/workflows" in str(file_path).lower():
-                        cicd_files.append(str(file_path.relative_to(self.workspace_path)))
+                    if "github/workflows" in rel_str:
+                        cicd_files.append(str(rel_file))
                     elif file in [".gitlab-ci.yml", "azure-pipelines.yml"]:
-                        cicd_files.append(str(file_path.relative_to(self.workspace_path)))
+                        cicd_files.append(str(rel_file))
                 elif file == "Jenkinsfile":
-                    cicd_files.append(str(file_path.relative_to(self.workspace_path)))
+                    cicd_files.append(str(rel_file))
 
                 # Infra detection
                 if file == "Dockerfile" or file.startswith("docker-compose"):
-                    infra_files.append(str(file_path.relative_to(self.workspace_path)))
+                    infra_files.append(str(rel_file))
                 elif ext in [".tf", ".tfvars"]:
-                    infra_files.append(str(file_path.relative_to(self.workspace_path)))
+                    infra_files.append(str(rel_file))
                 elif "helm" in rel_root.parts or "k8s" in rel_root.parts:
-                    infra_files.append(str(file_path.relative_to(self.workspace_path)))
+                    infra_files.append(str(rel_file))
 
                 # Existing contexts
                 if file == "AGENTS.md" and root == str(self.workspace_path):
@@ -161,11 +175,12 @@ class CodebaseScanner:
     def _parse_manifest(
         self, file_path: Path, filename: str
     ) -> tuple[list[str], list[str], list[str]]:
-        deps = []
-        tc = []
-        bc = []
+        deps: list[str] = []
+        tc: list[str] = []
+        bc: list[str] = []
         try:
             content = file_path.read_text(encoding="utf-8")
+
             if filename == "package.json":
                 import json
 
@@ -180,13 +195,99 @@ class CodebaseScanner:
                         bc.append("npm run build")
                 except json.JSONDecodeError:
                     pass
+
             elif filename == "requirements.txt":
                 for line in content.splitlines():
                     line = line.split("#")[0].strip()
-                    if line:
-                        dep = re.split(r"[=<>~]", line)[0]
-                        if dep:
-                            deps.append(dep)
+                    if not line:
+                        continue
+                    dep = re.split(r"[=<>~!\[\];]", line)[0].strip()
+                    if dep and not dep.startswith(("-", "http", "git+")):
+                        deps.append(dep)
+
+            elif filename == "pyproject.toml":
+                import tomllib as _toml
+
+                try:
+                    data = _toml.loads(content)
+                    project = data.get("project", {})
+                    for spec in project.get("dependencies", []):
+                        name = re.split(r"[=<>~!\[\];]", spec)[0].strip()
+                        if name:
+                            deps.append(name)
+                    for extras in project.get("optional-dependencies", {}).values():
+                        for spec in extras:
+                            name = re.split(r"[=<>~!\[\];]", spec)[0].strip()
+                            if name:
+                                deps.append(name)
+                except Exception:
+                    pass
+
+            elif filename == "go.mod":
+                in_require = False
+                for line in content.splitlines():
+                    stripped = line.strip()
+                    if stripped == "require (":
+                        in_require = True
+                        continue
+                    if in_require:
+                        if stripped == ")":
+                            in_require = False
+                            continue
+                        if stripped and not stripped.startswith("//"):
+                            name = stripped.split()[0]
+                            if "." in name:
+                                deps.append(name)
+                        continue
+                    parts = stripped.split()
+                    if len(parts) >= 2 and parts[0] in ("require", "module"):
+                        if "." in parts[1]:
+                            deps.append(parts[1])
+
+            elif filename == "Cargo.toml":
+                import tomllib as _toml
+
+                try:
+                    data = _toml.loads(content)
+                    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+                        deps.extend(data.get(section, {}).keys())
+                except Exception:
+                    pass
+
+            elif filename == "composer.json":
+                import json
+
+                try:
+                    data = json.loads(content)
+                    deps.extend(data.get("require", {}).keys())
+                    deps.extend(data.get("require-dev", {}).keys())
+                except json.JSONDecodeError:
+                    pass
+
+            elif filename == "Gemfile":
+                for m in re.finditer(r"gem\s+['\"]([^'\"]+)['\"]", content):
+                    deps.append(m.group(1))
+
+            elif filename == "pom.xml":
+                try:
+                    import xml.etree.ElementTree as ET
+
+                    root = ET.fromstring(content)
+                    ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+                    for dep in root.findall(".//m:dependencies/m:dependency", ns):
+                        group = dep.findtext("m:groupId", default="", namespaces=ns)
+                        art = dep.findtext("m:artifactId", default="", namespaces=ns)
+                        if group and art:
+                            deps.append(f"{group}:{art}")
+                except Exception:
+                    pass
+
+            elif filename == "build.gradle":
+                for m in re.finditer(
+                    r"(?:implementation|api|compile)\s+['\"]([^'\"]+)['\"]", content
+                ):
+                    deps.append(m.group(1))
+
         except Exception:
             pass
         return deps, tc, bc

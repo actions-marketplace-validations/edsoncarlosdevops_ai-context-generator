@@ -9,7 +9,7 @@ jobs:
           versionSpec: '3.12'
       - script: |
           pip install ai-context-generator
-          ai-context-generator generate --workspace $(Build.SourcesDirectory) --api-key $(AI_API_KEY) --model $(MODEL)
+          ai-context-generator generate --workspace $(Build.SourcesDirectory) --model $(MODEL)
         displayName: 'Generate AGENTS.md and context files'
         env:
           AI_API_KEY: $(AI_API_KEY)

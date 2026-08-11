@@ -1,8 +1,17 @@
 name: Publish to PyPI
 
 on:
+  # Triggered automatically when the CI release job creates the version tag
+  # (e.g. v1.2.0). Requires a trusted publisher configured on PyPI for this
+  # repository (see README / https://pypi.org/manage/account/publishing/).
+  push:
+    tags:
+      - 'v*.*.*'
+  # Also allow publishing from a manually published GitHub Release.
   release:
     types: [published]
+  # Manual trigger for testing after configuring the trusted publisher.
+  workflow_dispatch:
 
 jobs:
   pypi-publish:

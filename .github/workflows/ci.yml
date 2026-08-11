@@ -42,24 +42,32 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -e ".[dev]" -q 2>/dev/null || pip install -r requirements.txt pytest -q
+        run: pip install -r requirements.txt pytest -q && pip install -e .
 
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
-  validate-action:
-    name: Validate action.yml
+  validate-workflows:
+    name: Validate Workflows & Action YAML
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install actionlint
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install actionlint & pyyaml
         run: |
           bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
           sudo mv actionlint /usr/local/bin/
+          pip install pyyaml -q
 
-      - name: Run actionlint
-        run: actionlint action.yml
+      - name: Run actionlint on workflows
+        run: actionlint .github/workflows/*.yml
+
+      - name: Validate action.yml syntax
+        run: python -c "import yaml; yaml.safe_load(open('action.yml'))"
 
   validate-examples:
     name: Validate Example Files
@@ -72,7 +80,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -q
+        run: pip install -r requirements.txt -q && pip install -e .
 
       - name: Validate scanner on own repo
         run: |
@@ -96,7 +104,7 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [lint, test, validate-action, validate-examples]
+    needs: [lint, test, validate-workflows, validate-examples]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write

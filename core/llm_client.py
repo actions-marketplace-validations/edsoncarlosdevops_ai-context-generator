@@ -1,5 +1,6 @@
 import time
-from openai import OpenAI, RateLimitError, APIStatusError, APIConnectionError
+
+from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 
 
 class LLMError(Exception):
@@ -43,8 +44,10 @@ class LLMClient:
 
             except self._RETRYABLE as e:
                 last_error = e
-                wait = 2 ** attempt  # 1s, 2s, 4s
-                print(f"  [retry {attempt + 1}/{max_retries}] Rate limit / connection error — retrying in {wait}s")
+                wait = 2**attempt  # 1s, 2s, 4s
+                print(
+                    f"  [retry {attempt + 1}/{max_retries}] Rate limit / connection error — retrying in {wait}s"
+                )
                 time.sleep(wait)
 
             except APIStatusError as e:
@@ -57,8 +60,10 @@ class LLMClient:
                 # 5xx Server errors — retry
                 if e.status_code >= 500:
                     last_error = e
-                    wait = 2 ** attempt
-                    print(f"  [retry {attempt + 1}/{max_retries}] Server error {e.status_code} — retrying in {wait}s")
+                    wait = 2**attempt
+                    print(
+                        f"  [retry {attempt + 1}/{max_retries}] Server error {e.status_code} — retrying in {wait}s"
+                    )
                     time.sleep(wait)
                 else:
                     raise LLMError(f"LLM API error (HTTP {e.status_code}): {e.message}") from e

@@ -1,12 +1,6 @@
-import os
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-import sys
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 
 @dataclass
@@ -20,18 +14,19 @@ class GeneratorConfig:
 @dataclass
 class OutputConfig:
     """Controls which bridge files are generated. All default to True for maximum compatibility."""
+
     agents_md: bool = True
 
     # IDE / AI coding assistants
-    cursorrules: bool = True           # Cursor IDE
-    windsurfrules: bool = True         # Windsurf (Codeium)
-    clinerules: bool = True            # Cline (VS Code)
-    zed_rules: bool = True             # Zed AI
-    aider_conventions: bool = True     # Aider CLI
-    claude_md: bool = True             # Claude Code (Anthropic)
+    cursorrules: bool = True  # Cursor IDE
+    windsurfrules: bool = True  # Windsurf (Codeium)
+    clinerules: bool = True  # Cline (VS Code)
+    zed_rules: bool = True  # Zed AI
+    aider_conventions: bool = True  # Aider CLI
+    claude_md: bool = True  # Claude Code (Anthropic)
     copilot_instructions: bool = True  # GitHub Copilot
-    amazonq_rules: bool = True         # Amazon Q Developer
-    continue_rules: bool = True        # Continue.dev
+    amazonq_rules: bool = True  # Amazon Q Developer
+    continue_rules: bool = True  # Continue.dev
 
     # CI/CD integration
     create_pr: bool = False
@@ -39,9 +34,17 @@ class OutputConfig:
 
 @dataclass
 class ScanConfig:
-    exclude_dirs: list[str] = field(default_factory=lambda: [
-        ".git", "node_modules", ".venv", "dist", "build", "__pycache__", ".mypy_cache"
-    ])
+    exclude_dirs: list[str] = field(
+        default_factory=lambda: [
+            ".git",
+            "node_modules",
+            ".venv",
+            "dist",
+            "build",
+            "__pycache__",
+            ".mypy_cache",
+        ]
+    )
     max_file_size_kb: int = 100
 
 

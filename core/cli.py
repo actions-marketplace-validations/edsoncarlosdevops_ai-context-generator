@@ -1,15 +1,14 @@
 import argparse
-import json
 import os
 import sys
 from pathlib import Path
 
-from core.config import load_config
-from core.llm_client import LLMClient
-from core.generator import ContextGenerator
-from core.scanner import CodebaseScanner
 from core.analyzer import ProjectAnalyzer
+from core.config import load_config
+from core.generator import ContextGenerator
+from core.llm_client import LLMClient
 from core.prompt_builder import PromptBuilder
+from core.scanner import CodebaseScanner
 
 
 def _print_ok(msg: str) -> None:
@@ -47,15 +46,31 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command")
     gen = subparsers.add_parser("generate", help="Generate AI context files")
 
-    gen.add_argument("--workspace", default=".", help="Path to the repository root (default: current directory)")
+    gen.add_argument(
+        "--workspace", default=".", help="Path to the repository root (default: current directory)"
+    )
     gen.add_argument("--config", help="Path to .ai_context.toml")
     gen.add_argument("--api-key", help="LLM API key (or env var AI_API_KEY / OPENAI_API_KEY)")
-    gen.add_argument("--base-url", help="Custom LLM base URL (e.g. http://localhost:11434/v1 for Ollama)")
+    gen.add_argument(
+        "--base-url", help="Custom LLM base URL (e.g. http://localhost:11434/v1 for Ollama)"
+    )
     gen.add_argument("--model", help="LLM model override (e.g. gpt-4o, deepseek-chat, llama3)")
-    gen.add_argument("--language", help="Output language: english, portuguese, spanish, french, german")
-    gen.add_argument("--replace", action="store_true", help="Replace existing AGENTS.md instead of enriching")
-    gen.add_argument("--dry-run", action="store_true", help="Preview scan results and generated prompt without writing any files")
-    gen.add_argument("--no-bridge", action="store_true", help="Skip generating all AI tool bridge files (.cursorrules, CLAUDE.md, etc.)")
+    gen.add_argument(
+        "--language", help="Output language: english, portuguese, spanish, french, german"
+    )
+    gen.add_argument(
+        "--replace", action="store_true", help="Replace existing AGENTS.md instead of enriching"
+    )
+    gen.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview scan results and generated prompt without writing any files",
+    )
+    gen.add_argument(
+        "--no-bridge",
+        action="store_true",
+        help="Skip generating all AI tool bridge files (.cursorrules, CLAUDE.md, etc.)",
+    )
 
     args = parser.parse_args()
 
@@ -95,16 +110,18 @@ def main() -> int:
         print("\n\033[1mai-context-generator — Dry Run Preview\033[0m")
         print("=" * 50)
 
-        scanner = CodebaseScanner(workspace_path, config.scan.exclude_dirs, config.scan.max_file_size_kb)
+        scanner = CodebaseScanner(
+            workspace_path, config.scan.exclude_dirs, config.scan.max_file_size_kb
+        )
         scan = scanner.scan()
         analyzer = ProjectAnalyzer()
         profile = analyzer.analyze(scan)
 
         total = sum(scan.language_counts.values()) or 1
         top_langs = sorted(scan.language_counts.items(), key=lambda x: x[1], reverse=True)[:4]
-        lang_str = ", ".join(f"{l} ({int(c/total*100)}%)" for l, c in top_langs)
+        lang_str = ", ".join(f"{lang} ({int(c / total * 100)}%)" for lang, c in top_langs)
 
-        print(f"\n\033[1mScan Results\033[0m")
+        print("\n\033[1mScan Results\033[0m")
         print(f"  Files scanned   : {scan.total_files}")
         print(f"  Languages       : {lang_str}")
         print(f"  Frameworks      : {', '.join(profile.frameworks) or 'None detected'}")
@@ -112,12 +129,18 @@ def main() -> int:
         print(f"  CI/CD           : {', '.join(profile.cicd_platforms) or 'None detected'}")
         print(f"  Domain          : {profile.domain}")
         print(f"  Security risk   : {profile.security_risk_level}")
-        print(f"  AI tools found  : {', '.join(scan.detected_ai_tools) or 'None (all bridges would be generated)'}")
-        print(f"  Existing AGENTS : {'Yes — enrich mode' if scan.existing_agents_md else 'No — create from scratch'}")
+        print(
+            f"  AI tools found  : {', '.join(scan.detected_ai_tools) or 'None (all bridges would be generated)'}"
+        )
+        print(
+            f"  Existing AGENTS : {'Yes — enrich mode' if scan.existing_agents_md else 'No — create from scratch'}"
+        )
 
         builder = PromptBuilder(config)
         prompt = builder.build(profile)
-        print(f"\n\033[1mPrompt Preview\033[0m ({len(prompt.splitlines())} lines, {len(prompt)} chars)")
+        print(
+            f"\n\033[1mPrompt Preview\033[0m ({len(prompt.splitlines())} lines, {len(prompt)} chars)"
+        )
         print("-" * 50)
         for line in prompt.splitlines()[:30]:
             print(f"  {line}")
@@ -165,8 +188,8 @@ def main() -> int:
     # GitHub Step Summary
     summary_lines = [
         "## ai-context-generator Results",
-        f"| Key | Value |",
-        f"|-----|-------|",
+        "| Key | Value |",
+        "|-----|-------|",
         f"| Files scanned | {result.scanned_files} |",
         f"| Languages | {result.language_percentages} |",
         f"| Frameworks | {', '.join(result.frameworks) or 'None'} |",

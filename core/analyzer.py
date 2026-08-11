@@ -1,22 +1,22 @@
 from dataclasses import dataclass
-from typing import List, Optional
+
 from core.scanner import ScanResult
 
 
 @dataclass
 class ProjectProfile:
     primary_language: str
-    secondary_languages: List[str]
-    frameworks: List[str]
-    infra_tools: List[str]
-    cicd_platforms: List[str]
-    architecture_hints: List[str]
+    secondary_languages: list[str]
+    frameworks: list[str]
+    infra_tools: list[str]
+    cicd_platforms: list[str]
+    architecture_hints: list[str]
     domain: str
     security_risk_level: str
-    existing_agents_md: Optional[str]
+    existing_agents_md: str | None
     has_tests: bool
-    test_commands: List[str]
-    build_commands: List[str]
+    test_commands: list[str]
+    build_commands: list[str]
 
 
 # Maps dependency keyword → human-readable framework name
@@ -82,19 +82,41 @@ FRAMEWORK_SIGNALS: dict[str, str] = {
 
 # Maps dependency keyword → domain
 DOMAIN_SIGNALS: dict[str, str] = {
-    "rclpy": "robotics", "rclcpp": "robotics", "ros2": "robotics", "mcap": "robotics",
-    "stripe": "fintech", "plaid": "fintech", "braintree": "fintech", "paypal": "fintech",
-    "pydantic-money": "fintech", "money": "fintech",
-    "apache-airflow": "data-engineering", "airflow": "data-engineering",
-    "pyspark": "data-engineering", "dbt": "data-engineering",
-    "prefect": "data-engineering", "dagster": "data-engineering",
-    "duckdb": "data-engineering", "pyarrow": "data-engineering",
-    "pandas": "data-engineering", "polars": "data-engineering",
-    "react": "web", "next": "web", "django": "web",
-    "flask": "web", "fastapi": "web", "express": "web",
-    "vue": "web", "@angular": "web", "svelte": "web",
-    "terraform": "devops", "pulumi": "devops", "ansible": "devops",
-    "zephyr": "embedded", "freertos": "embedded", "cmsis": "embedded",
+    "rclpy": "robotics",
+    "rclcpp": "robotics",
+    "ros2": "robotics",
+    "mcap": "robotics",
+    "stripe": "fintech",
+    "plaid": "fintech",
+    "braintree": "fintech",
+    "paypal": "fintech",
+    "pydantic-money": "fintech",
+    "money": "fintech",
+    "apache-airflow": "data-engineering",
+    "airflow": "data-engineering",
+    "pyspark": "data-engineering",
+    "dbt": "data-engineering",
+    "prefect": "data-engineering",
+    "dagster": "data-engineering",
+    "duckdb": "data-engineering",
+    "pyarrow": "data-engineering",
+    "pandas": "data-engineering",
+    "polars": "data-engineering",
+    "react": "web",
+    "next": "web",
+    "django": "web",
+    "flask": "web",
+    "fastapi": "web",
+    "express": "web",
+    "vue": "web",
+    "@angular": "web",
+    "svelte": "web",
+    "terraform": "devops",
+    "pulumi": "devops",
+    "ansible": "devops",
+    "zephyr": "embedded",
+    "freertos": "embedded",
+    "cmsis": "embedded",
 }
 
 # Infra detection
@@ -119,12 +141,12 @@ class ProjectAnalyzer:
 
     def analyze(self, scan_result: ScanResult) -> ProjectProfile:
         # Language ranking: exclude YAML from primary if Python/C++ are present
-        sorted_langs = sorted(
-            scan_result.language_counts.items(), key=lambda x: x[1], reverse=True
+        sorted_langs = sorted(scan_result.language_counts.items(), key=lambda x: x[1], reverse=True)
+        code_langs = [(lang, c) for lang, c in sorted_langs if lang not in ("YAML",)]
+        primary_lang = (
+            code_langs[0][0] if code_langs else (sorted_langs[0][0] if sorted_langs else "Unknown")
         )
-        code_langs = [(l, c) for l, c in sorted_langs if l not in ("YAML",)]
-        primary_lang = code_langs[0][0] if code_langs else (sorted_langs[0][0] if sorted_langs else "Unknown")
-        secondary_langs = [l for l, _ in (code_langs[1:] if code_langs else sorted_langs[1:])]
+        secondary_langs = [lang for lang, _ in (code_langs[1:] if code_langs else sorted_langs[1:])]
 
         # Framework detection
         deps_lower = [d.lower() for d in scan_result.dependencies]

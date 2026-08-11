@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dev dependencies
+        run: pip install ruff openai -q
+
+      - name: Ruff lint
+        run: ruff check core/ --output-format=github
+
+      - name: Ruff format check
+        run: ruff format core/ --check
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -e ".[dev]" -q 2>/dev/null || pip install -r requirements.txt pytest -q
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  validate-action:
+    name: Validate action.yml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install actionlint
+        run: |
+          bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          sudo mv actionlint /usr/local/bin/
+
+      - name: Run actionlint
+        run: actionlint action.yml
+
+  validate-examples:
+    name: Validate Example Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -q
+
+      - name: Validate scanner on own repo
+        run: |
+          python -c "
+          from pathlib import Path
+          from core.scanner import CodebaseScanner
+          from core.analyzer import ProjectAnalyzer
+          from core.config import load_config
+
+          workspace = Path('.')
+          cfg = load_config(workspace)
+          scanner = CodebaseScanner(workspace, cfg.scan.exclude_dirs, cfg.scan.max_file_size_kb)
+          scan = scanner.scan()
+          analyzer = ProjectAnalyzer()
+          profile = analyzer.analyze(scan)
+          assert profile.primary_language, 'Primary language not detected'
+          assert profile.domain, 'Domain not detected'
+          print(f'OK — {profile.primary_language} / {profile.domain} / {profile.frameworks}')
+          "
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [lint, test, validate-action, validate-examples]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version from pyproject.toml
+        id: version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: tag_check
+        run: |
+          if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update floating v1 tag
+        if: steps.tag_check.outputs.exists == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa v1 -m "Update v1 floating tag to ${{ steps.version.outputs.version }}"
+          git push origin --tags --force

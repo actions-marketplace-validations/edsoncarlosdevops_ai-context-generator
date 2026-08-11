@@ -1,61 +1,143 @@
 name: 'AI Context Generator'
-description: 'Scan any repository and auto-generate AGENTS.md, .cursorrules, CLAUDE.md for any AI coding tool.'
+description: >
+  Scan any repository and auto-generate AGENTS.md, .cursorrules, CLAUDE.md,
+  .windsurfrules and more — the universal AI context layer for every AI coding tool.
 author: 'edsoncarlosdevops'
+
 branding:
   icon: 'cpu'
   color: 'purple'
+
 inputs:
   ai_api_key:
-    description: 'LLM API Key (DeepSeek, OpenAI, Anthropic, etc.)'
+    description: 'LLM API Key (DeepSeek, OpenAI, Anthropic-compatible, Ollama, etc.)'
     required: true
   model:
-    description: 'LLM model'
+    description: 'LLM model name (e.g. deepseek-chat, gpt-4o, claude-3-5-sonnet-20241022, llama3)'
     required: false
     default: 'deepseek-chat'
+  base_url:
+    description: 'Custom LLM base URL. Default: DeepSeek endpoint. Use http://localhost:11434/v1 for Ollama.'
+    required: false
+    default: 'https://api.deepseek.com'
   language:
-    description: 'Output language for AGENTS.md'
+    description: 'Output language for AGENTS.md (english, portuguese, spanish, french, german)'
     required: false
     default: 'english'
   create_pr:
-    description: 'Open a PR automatically with the generated files'
+    description: 'Open a PR automatically with the generated files (true/false)'
     required: false
     default: 'true'
   replace:
-    description: 'Replace existing AGENTS.md instead of enriching'
+    description: 'Replace existing AGENTS.md entirely instead of enriching it (true/false)'
+    required: false
+    default: 'false'
+  no_bridge:
+    description: 'Skip generating bridge files (.cursorrules, CLAUDE.md, etc.) — only write AGENTS.md'
     required: false
     default: 'false'
   github_token:
-    description: 'GitHub token for opening PRs (uses GITHUB_TOKEN if not set)'
+    description: 'GitHub token for opening PRs. Defaults to the built-in GITHUB_TOKEN.'
     required: false
+
+outputs:
+  agents_md_written:
+    description: 'true if AGENTS.md was written or updated, false if skipped (no significant change)'
+    value: ${{ steps.generate.outputs.agents_md_written }}
+
 runs:
   using: "composite"
   steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
-    - name: Setup Python
+    - name: Setup Python 3.12
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-        
-    - name: Install dependencies
-      run: pip install -r ${{ github.action_path }}/requirements.txt
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ai-context-generator-pip-${{ runner.os }}-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ai-context-generator-pip-${{ runner.os }}-
+
+    - name: Install ai-context-generator
+      run: pip install -r ${{ github.action_path }}/requirements.txt -q
       shell: bash
-      
-    - name: Generate AI Context
+
+    - name: Generate AI context files
+      id: generate
       run: |
-        CMD="python ${{ github.action_path }}/core/cli.py generate --workspace ${{ github.workspace }} --api-key ${{ inputs.ai_api_key }} --model ${{ inputs.model }} --language ${{ inputs.language }}"
-        if [ "${{ inputs.replace }}" == "true" ]; then
+        CMD="python ${{ github.action_path }}/core/cli.py generate \
+          --workspace ${{ github.workspace }} \
+          --api-key ${{ inputs.ai_api_key }} \
+          --model ${{ inputs.model }} \
+          --base-url ${{ inputs.base_url }} \
+          --language ${{ inputs.language }}"
+
+        if [ "${{ inputs.replace }}" = "true" ]; then
           CMD="$CMD --replace"
         fi
+
+        if [ "${{ inputs.no_bridge }}" = "true" ]; then
+          CMD="$CMD --no-bridge"
+        fi
+
+        echo "::group::ai-context-generator output"
         eval $CMD
+        EXIT_CODE=$?
+        echo "::endgroup::"
+
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "::error::ai-context-generator failed. Check your API key and model name."
+          exit $EXIT_CODE
+        fi
+
+        # Check if AGENTS.md was actually modified
+        if git -C ${{ github.workspace }} diff --quiet HEAD -- AGENTS.md 2>/dev/null; then
+          echo "agents_md_written=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::AGENTS.md is already up-to-date. No PR will be created."
+        else
+          echo "agents_md_written=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::AGENTS.md was updated successfully."
+        fi
       shell: bash
-      
+
     - name: Create Pull Request
-      if: ${{ inputs.create_pr == 'true' }}
+      if: ${{ inputs.create_pr == 'true' && steps.generate.outputs.agents_md_written == 'true' }}
       uses: peter-evans/create-pull-request@v6
       with:
         token: ${{ inputs.github_token || github.token }}
-        commit-message: "docs: update AI context files (AGENTS.md)"
-        title: "docs: update AI context files (AGENTS.md)"
+        commit-message: "docs(ai-context): update AI context files"
+        title: "docs(ai-context): update AGENTS.md and AI tool context files"
         branch: "auto/update-ai-context"
+        delete-branch: true
+        body: |
+          ## AI Context Generator — Automated Update
+
+          This PR was created automatically by [ai-context-generator](https://github.com/edsoncarlosdevops/ai-context-generator).
+
+          ### What changed
+
+          The tool scanned this repository and updated the AI context governance files to reflect the current codebase.
+
+          ### Files updated
+
+          | File | Purpose |
+          |------|---------|
+          | `AGENTS.md` | Master governance file for all AI coding assistants |
+          | `.cursorrules` | Cursor IDE context |
+          | `.windsurfrules` | Windsurf (Codeium) context |
+          | `CLAUDE.md` | Claude Code context |
+          | `.github/copilot-instructions.md` | GitHub Copilot context |
+
+          ### Review checklist
+
+          - [ ] The generated rules accurately reflect the current architecture
+          - [ ] No sensitive information is included in AGENTS.md
+          - [ ] The technology stack detection looks correct
+
+          ---
+
+          > To customise generation, add `.ai_context.toml` to your repository root.
+          > See [documentation](https://github.com/edsoncarlosdevops/ai-context-generator#configuration) for all options.

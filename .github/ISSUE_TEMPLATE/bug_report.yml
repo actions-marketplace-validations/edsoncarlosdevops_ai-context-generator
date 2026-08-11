@@ -1,0 +1,50 @@
+name: Bug Report
+description: File a bug report to help us fix issues with scanning, prompts, or generation.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out a bug report!
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment Info
+      description: What OS, Python version, and execution environment (CLI, GitHub Actions, GitLab CI, Azure DevOps) are you using?
+      placeholder: e.g., Ubuntu 22.04, Python 3.12, GitHub Actions
+    validations:
+      required: true
+
+  - type: input
+    id: llm_provider
+    attributes:
+      label: LLM Provider & Model
+      description: Which LLM provider and model are you calling?
+      placeholder: e.g., DeepSeek (deepseek-chat), OpenAI (gpt-4o), Ollama (llama3)
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior / Error Logs
+      description: What happened instead? Please paste relevant error logs or command output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to Reproduce
+      description: Provide clear steps or link to a repository that reproduces the issue.
+    validations:
+      required: false

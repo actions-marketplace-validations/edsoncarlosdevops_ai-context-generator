@@ -5,7 +5,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/edsoncarlosdevops/ai-context-generator/releases"><img src="https://img.shields.io/github/v/release/edsoncarlosdevops/ai-context-generator?style=for-the-badge&color=6C3FB5" alt="GitHub release"></a>
+  <a href="https://pypi.org/project/ai-context-generator/"><img src="https://img.shields.io/pypi/v/ai-context-generator?style=for-the-badge&color=6C3FB5&logo=pypi&logoColor=white" alt="PyPI Package"></a>
+  <a href="https://github.com/edsoncarlosdevops/ai-context-generator/releases"><img src="https://img.shields.io/github/v/release/edsoncarlosdevops/ai-context-generator?style=for-the-badge&color=2E86AB" alt="GitHub release"></a>
   <a href="https://github.com/marketplace/actions/ai-context-generator"><img src="https://img.shields.io/badge/Marketplace-AI%20Context%20Generator-blue?style=for-the-badge&logo=github" alt="GitHub Marketplace"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License MIT"></a>
   <a href="https://github.com/edsoncarlosdevops/ai-context-generator/stargazers"><img src="https://img.shields.io/github/stars/edsoncarlosdevops/ai-context-generator?style=for-the-badge&color=gold" alt="GitHub Stars"></a>
@@ -82,7 +83,43 @@ Used together with [ai-pr-reviewer](https://github.com/edsoncarlosdevops/ai-pr-r
 
 ## Quick Start
 
-### GitHub Actions
+### ⚡ Zero-Install CLI (Recommended for fast local testing)
+
+No installation required using `uvx` or `pipx`:
+
+```bash
+# Run instantly with uvx
+uvx ai-context-generator generate --workspace . --api-key $AI_API_KEY
+
+# Or with pipx
+pipx run ai-context-generator generate --workspace . --api-key $AI_API_KEY
+
+# Dry-run preview without writing files
+uvx ai-context-generator generate --dry-run
+```
+
+### 📦 Standard Pip Install
+
+```bash
+pip install ai-context-generator
+
+# Run in your project root
+ai-context-generator generate --workspace . --api-key $AI_API_KEY
+```
+
+### 🪝 Pre-Commit Hook Integration
+
+Add `ai-context-generator` to your `.pre-commit-config.yaml` to keep context files updated before every commit:
+
+```yaml
+repos:
+  - repo: https://github.com/edsoncarlosdevops/ai-context-generator
+    rev: v1.0.0
+    hooks:
+      - id: ai-context-generator
+```
+
+### 🤖 GitHub Actions
 
 Add to `.github/workflows/ai-context.yml`:
 
@@ -108,46 +145,16 @@ jobs:
           create_pr: 'true'
 ```
 
-### GitLab CI
+---
 
-```yaml
-include:
-  - remote: 'https://raw.githubusercontent.com/edsoncarlosdevops/ai-context-generator/main/wrappers/gitlab-ci/.ai-context.yml'
+## 🏷️ Add Badge to Your Project README
 
-variables:
-  AI_API_KEY: $AI_API_KEY
-  MODEL: "deepseek-chat"
-```
+Show that your project maintains universal AI governance by adding this badge to your README:
 
-### Azure DevOps
+[![AI Context: AGENTS.md](https://img.shields.io/badge/AI%20Context-AGENTS.md-6C3FB5?style=flat-square&logo=cpu)](https://github.com/edsoncarlosdevops/ai-context-generator)
 
-```yaml
-resources:
-  repositories:
-    - repository: aicontext
-      type: github
-      name: edsoncarlosdevops/ai-context-generator
-      endpoint: myServiceConnection
-
-jobs:
-  - template: wrappers/azure-devops/template.yml@aicontext
-    parameters:
-      aiApiKey: $(AI_API_KEY)
-```
-
-### CLI
-
-```bash
-pip install ai-context-generator
-
-# Run in your project root
-ai-context-generator generate --workspace . --api-key $AI_API_KEY
-
-# Preview without writing files
-ai-context-generator generate --dry-run
-
-# Replace existing AGENTS.md entirely instead of enriching
-ai-context-generator generate --replace
+```markdown
+[![AI Context: AGENTS.md](https://img.shields.io/badge/AI%20Context-AGENTS.md-6C3FB5?style=flat-square&logo=cpu)](https://github.com/edsoncarlosdevops/ai-context-generator)
 ```
 
 ---
@@ -183,30 +190,6 @@ exclude_dirs = [".git", "node_modules", ".venv", "dist", "build"]
 max_file_size_kb = 100
 ```
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `model` | `deepseek-chat` | LLM model to use for generation |
-| `language` | `english` | Output language for generated rules |
-| `max_lines` | `150` | Token budget for AGENTS.md (prevents bloat) |
-| `create_pr` | `false` | Automatically open a PR with generated files |
-
----
-
-## What Gets Generated
-
-### `AGENTS.md` — Master Context File
-
-Project-specific, actionable governance rules organized by technology domain. Not generic boilerplate — the LLM analyzes your actual dependencies, directory structure, CI/CD config, and infers your architecture to generate rules that are checkable during code review.
-
-Example sections for a FastAPI + PostgreSQL + Docker project:
-- `## 1. API Design & Input Validation` — Pydantic models, HTTP status codes, OpenAPI docs
-- `## 2. Database & Migration Safety` — Alembic migrations, transaction handling, index strategy
-- `## 3. Container & CI/CD Standards` — Multi-stage builds, health checks, secrets management
-
-### Bridge Files
-
-Lightweight 3-line pointer files for each AI tool. All point to `AGENTS.md`. Zero content duplication. If you update `AGENTS.md`, every tool automatically gets the updated context.
-
 ---
 
 ## BYOM — Bring Your Own Model
@@ -225,26 +208,6 @@ ai-context-generator generate \
   --model gpt-4o \
   --workspace .
 ```
-
----
-
-## Supported Languages & Frameworks
-
-Automatically detected: Python, TypeScript, JavaScript, Go, Rust, C++, Java, Ruby, C#, HCL/Terraform.
-
-Frameworks inferred from dependencies: FastAPI, Django, Flask, Express, Next.js, React, Vue, Spring Boot, Ruby on Rails, ROS 2, Terraform, Pulumi, and more.
-
----
-
-## Related Projects
-
-- [ai-pr-reviewer](https://github.com/edsoncarlosdevops/ai-pr-reviewer) — Automated PR code reviewer that reads your `AGENTS.md` and enforces project-specific governance rules on every Pull Request. Works with GitHub Actions, GitLab CI, and Azure DevOps.
-
----
-
-## Keywords
-
-`AGENTS.md generator` · `cursorrules generator` · `CLAUDE.md` · `copilot instructions` · `ai context file` · `llm context` · `cursor rules` · `windsurf rules` · `cline rules` · `ai coding assistant` · `code review automation` · `github actions ai` · `deepseek` · `openai` · `agnostic ai context` · `project governance` · `developer tooling`
 
 ---
 

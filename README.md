@@ -63,7 +63,7 @@ AGENTS.md ─── Single Source of Truth
      └──► CONVENTIONS.md        (Aider)
 ```
 
-**Smart detection:** The tool detects which AI tools are already configured in your project and only generates bridge files for those. On a first run with no existing files, it generates all of them. Options you set explicitly in `.ai_context.toml` always take precedence over auto-detection.
+**Opt-in bridge model:** When you have a `[output]` section in `.ai_context.toml`, only the bridges you explicitly list are generated — keeping your repo clean. With no config at all, the tool generates all bridges on first run (maximum compatibility). This means your project root stays minimal: if you only use Cursor and Claude, only `.cursorrules` and `CLAUDE.md` are created.
 
 **Smart updates (cost-saving):** The tool stores a lightweight `.ai-context.sig` signature file in your repo. When the detected project profile is unchanged, the paid LLM call is **skipped entirely** and the existing `AGENTS.md` is kept. When the profile does change, the generated content is compared with the current file — if the architecture hasn't changed significantly (less than 10% diff), no files are written, keeping your git history clean. Commit `.ai-context.sig` alongside `AGENTS.md` to benefit in CI.
 
@@ -174,22 +174,47 @@ max_lines = 150
 [output]
 agents_md = true
 
-# Bridge files — auto-detected by default. Set false to disable specific tools.
+# Bridge files — opt-in model: only tools you list here are generated.
+# If you omit [output] entirely, ALL bridges are generated (first-run default).
 cursorrules = true          # Cursor
-windsurfrules = true        # Windsurf
-clinerules = true           # Cline
-zed_rules = true            # Zed AI
-aider_conventions = true    # Aider
 claude_md = true            # Claude Code
 copilot_instructions = true # GitHub Copilot
-amazonq_rules = true        # Amazon Q Developer
-continue_rules = true       # Continue.dev
+# windsurfrules = true      # Windsurf (uncomment to enable)
+# clinerules = true         # Cline
+# zed_rules = true          # Zed AI
+# aider_conventions = true  # Aider
+# amazonq_rules = true      # Amazon Q Developer
+# continue_rules = true     # Continue.dev
 
 create_pr = false           # Open a PR automatically on CI runs
 
 [scan]
 exclude_dirs = [".git", "node_modules", ".venv", "dist", "build"]
 max_file_size_kb = 100
+```
+
+**Bridge files stay clean.** The tool automatically creates a `.gitattributes` file
+marking all generated bridges as `linguist-generated`, so they:
+- Collapse by default in GitHub PR diffs
+- Don't count toward your language statistics
+
+### Pipeline Integration
+
+For automatic updates when your project structure changes, add path triggers:
+
+```yaml
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'package.json'
+      - 'Dockerfile*'
+      - '.github/workflows/*.yml'
+      - '*.tf'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'
 ```
 
 ---

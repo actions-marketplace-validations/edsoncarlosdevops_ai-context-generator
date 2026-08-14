@@ -57,16 +57,60 @@ class ContextGenerator:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
     def _bridge_config(self, scan_result: ScanResult) -> OutputConfig:
-        """Resolve bridge flags: explicit user config wins; otherwise auto-detect used tools."""
+        """Resolve bridge flags.
+
+        Priority order:
+        1. Explicit user config in .ai_context.toml always wins.
+        2. If user set NO output keys → auto-detect from existing AI tool files.
+        3. If user set NO output keys AND no AI tools detected → generate all (first run).
+        """
+        explicit = self.config.explicit_output_keys
+        # User explicitly configured output section → respect it fully.
+        if explicit:
+            return self.config.output
+
+        # No explicit config: auto-detect from repository AI tool files.
         detected = set(scan_result.detected_ai_tools) - {"antigravity"}
         if not detected:
+            # First run, no tools found → generate all bridges.
             return self.config.output
-        explicit = self.config.explicit_output_keys
-        overrides = {
-            flag: (tool in detected) if flag not in explicit else getattr(self.config.output, flag)
-            for flag, tool in BRIDGE_FLAG_TO_TOOL.items()
-        }
+
+        # Only generate bridges for tools actually present in the repo.
+        overrides = {flag: (tool in detected) for flag, tool in BRIDGE_FLAG_TO_TOOL.items()}
         return replace(self.config.output, **overrides)
+
+    def _write_gitattributes(self, bridge_files: list[str]) -> None:
+        """Add linguist-generated markers for bridge files in .gitattributes.
+
+        This causes GitHub to:
+        - Collapse these files by default in PR diffs
+        - Exclude them from language statistics
+        """
+        ga_path = self.workspace_path / ".gitattributes"
+        marker_start = "# >>> ai-context-generator (auto-managed) >>>"
+        marker_end = "# <<< ai-context-generator <<<"
+
+        managed_lines = [marker_start]
+        # Always include the signature file
+        managed_lines.append(f"{SIGNATURE_FILE} linguist-generated=true")
+        for bf in sorted(bridge_files):
+            managed_lines.append(f"{bf} linguist-generated=true")
+        managed_lines.append(marker_end)
+        managed_block = "\n".join(managed_lines) + "\n"
+
+        if ga_path.exists():
+            existing = ga_path.read_text(encoding="utf-8")
+            # Replace existing managed block if present
+            import re as _re
+
+            pattern = _re.escape(marker_start) + r".*?" + _re.escape(marker_end) + r"\n?"
+            if marker_start in existing:
+                updated = _re.sub(pattern, managed_block, existing, flags=_re.DOTALL)
+            else:
+                updated = existing.rstrip("\n") + "\n\n" + managed_block
+            ga_path.write_text(updated, encoding="utf-8")
+        else:
+            ga_path.write_text(managed_block, encoding="utf-8")
 
     def generate(self, force_replace: bool = False) -> GenerationResult:
         scanner = CodebaseScanner(
@@ -119,6 +163,11 @@ class ContextGenerator:
         # respecting explicit config and tool auto-detection.
         bridge_writer = BridgeWriter(self.workspace_path, self._bridge_config(scan_result), profile)
         bridge_files = bridge_writer.write_all()
+
+        # Mark generated bridge files as machine-generated in .gitattributes
+        # so they collapse in GitHub PR diffs and are clearly marked as auto-managed.
+        if bridge_files:
+            self._write_gitattributes(bridge_files)
 
         total = sum(scan_result.language_counts.values())
         lang_percs = ""

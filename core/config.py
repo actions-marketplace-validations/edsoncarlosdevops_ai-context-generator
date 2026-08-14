@@ -101,9 +101,19 @@ def load_config(workspace_path: Path, config_path: Path | None = None) -> AppCon
         out_data = data.get("output", {})
         scan_data = _filter_known("scan", data.get("scan", {}), scan_fields)
 
+        # Bridge semantics: if [output] section exists, any bridge flag
+        # the user did NOT list is treated as disabled (opt-in model).
+        # This prevents generating 9 files when the user only wanted 3.
+        bridge_flags = set(BRIDGE_FLAG_TO_TOOL.keys())
+        if out_data:
+            defaults_off = {flag: False for flag in bridge_flags if flag not in out_data}
+            merged_out = {**defaults_off, **_filter_known("output", out_data, out_fields)}
+        else:
+            merged_out = {}
+
         return AppConfig(
             generator=GeneratorConfig(**gen_data),
-            output=OutputConfig(**_filter_known("output", out_data, out_fields)),
+            output=OutputConfig(**merged_out),
             scan=ScanConfig(**scan_data),
             explicit_output_keys=set(out_data),
         )

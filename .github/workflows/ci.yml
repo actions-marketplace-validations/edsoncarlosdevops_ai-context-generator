@@ -19,13 +19,19 @@ jobs:
           cache: pip
 
       - name: Install dev dependencies
-        run: pip install ruff openai -q
+        run: pip install ruff openai mypy bandit -q
 
       - name: Ruff lint
         run: ruff check core/ tests/ --output-format=github
 
       - name: Ruff format check
         run: ruff format core/ tests/ --check
+
+      - name: Mypy type check
+        run: mypy core/
+
+      - name: Bandit security scan
+        run: bandit -r core/ -c pyproject.toml -q
 
   test:
     name: Unit Tests
@@ -42,10 +48,17 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest -q && pip install -e .
+        run: pip install -r requirements.txt pytest pytest-cov -q && pip install -e .
 
-      - name: Run tests
+      - name: Run tests with coverage
         run: pytest tests/ -v --tb=short
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   validate-workflows:
     name: Validate Workflows & Action YAML
@@ -92,7 +105,7 @@ jobs:
 
           workspace = Path('.')
           cfg = load_config(workspace)
-          scanner = CodebaseScanner(workspace, cfg.scan.exclude_dirs, cfg.scan.max_file_size_kb)
+          scanner = CodebaseScanner(workspace, cfg.scan.exclude_dirs, cfg.scan.max_file_size_kb, cfg.scan.max_files)
           scan = scanner.scan()
           analyzer = ProjectAnalyzer()
           profile = analyzer.analyze(scan)

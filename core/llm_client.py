@@ -16,10 +16,18 @@ class LLMClient:
 
     _FENCE_RE = re.compile(r"^```(?:markdown|md)?\s*\n?(.*?)\n?```\s*$", re.DOTALL)
 
-    def __init__(self, api_key: str, model: str, base_url: str, max_tokens: int = 4096):
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str,
+        max_tokens: int = 4096,
+        timeout: float = 120.0,
+    ):
         self.model = model
         self.max_tokens = max_tokens
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.timeout = timeout
+        self.client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
 
     @staticmethod
     def _sanitize(content: str | None) -> str:

@@ -70,7 +70,6 @@ AGENTS.md ─── Single Source of Truth
      ├──► .cursorrules          (Cursor)
      ├──► .windsurfrules        (Windsurf)
      ├──► CLAUDE.md             (Claude Code)
-     ├──► .github/copilot-instructions.md  (GitHub Copilot)
      ├──► .clinerules           (Cline)
      ├──► .amazonq/rules/       (Amazon Q)
      ├──► .continue/rules.md    (Continue.dev)
@@ -137,7 +136,8 @@ Add `ai-context-generator` to your `.pre-commit-config.yaml` to keep context fil
 ```yaml
 repos:
   - repo: https://github.com/edsoncarlosdevops/ai-context-generator
-    rev: v1.2.0
+
+    rev: v1.3.0
     hooks:
       - id: ai-context-generator
 ```

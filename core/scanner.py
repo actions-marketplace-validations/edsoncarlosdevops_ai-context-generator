@@ -1,3 +1,4 @@
+import contextlib
 import os
 import re
 from collections import Counter
@@ -35,10 +36,17 @@ class ScanResult:
 
 
 class CodebaseScanner:
-    def __init__(self, workspace_path: Path, exclude_dirs: list[str], max_file_size_kb: int):
+    def __init__(
+        self,
+        workspace_path: Path,
+        exclude_dirs: list[str],
+        max_file_size_kb: int,
+        max_files: int = 100000,
+    ):
         self.workspace_path = workspace_path
         self.exclude_dirs = set(exclude_dirs)
         self.max_file_size_bytes = max_file_size_kb * 1024
+        self.max_files = max_files
 
         self.lang_exts = {
             ".py": "Python",
@@ -108,6 +116,21 @@ class CodebaseScanner:
                     continue
 
                 total_files += 1
+                if self.max_files and total_files > self.max_files:
+                    # Hard cap: keep scanning predictable on huge monorepos.
+                    print(f"  [scan] Reached max_files limit ({self.max_files}) — stopping scan.")
+                    return ScanResult(
+                        total_files=total_files,
+                        language_counts=dict(lang_counter),
+                        dependencies=list(dependencies),
+                        cicd_files=cicd_files,
+                        infra_files=infra_files,
+                        existing_agents_md=existing_agents_md,
+                        has_tests=has_tests,
+                        test_commands=list(set(test_commands)),
+                        build_commands=list(set(build_commands)),
+                        detected_ai_tools=sorted(detected_ai_tools),
+                    )
 
                 # Language detection
                 ext = file_path.suffix
@@ -127,27 +150,28 @@ class CodebaseScanner:
 
                 # CI/CD detection
                 if file.endswith(".yml") or file.endswith(".yaml"):
-                    if "github/workflows" in rel_str:
-                        cicd_files.append(str(rel_file))
-                    elif file in [".gitlab-ci.yml", "azure-pipelines.yml"]:
+                    if "github/workflows" in rel_str or file in [
+                        ".gitlab-ci.yml",
+                        "azure-pipelines.yml",
+                    ]:
                         cicd_files.append(str(rel_file))
                 elif file == "Jenkinsfile":
                     cicd_files.append(str(rel_file))
 
                 # Infra detection
-                if file == "Dockerfile" or file.startswith("docker-compose"):
-                    infra_files.append(str(rel_file))
-                elif ext in [".tf", ".tfvars"]:
-                    infra_files.append(str(rel_file))
-                elif "helm" in rel_root.parts or "k8s" in rel_root.parts:
+                if (
+                    file == "Dockerfile"
+                    or file.startswith("docker-compose")
+                    or ext in [".tf", ".tfvars"]
+                    or "helm" in rel_root.parts
+                    or "k8s" in rel_root.parts
+                ):
                     infra_files.append(str(rel_file))
 
                 # Existing contexts
                 if file == "AGENTS.md" and root == str(self.workspace_path):
-                    try:
+                    with contextlib.suppress(Exception):  # unreadable file — treat as absent
                         existing_agents_md = file_path.read_text(encoding="utf-8")
-                    except Exception:
-                        pass
 
                 # Tests
                 if "test" in file.lower() or "test" in rel_root.parts:
@@ -240,9 +264,8 @@ class CodebaseScanner:
                                 deps.append(name)
                         continue
                     parts = stripped.split()
-                    if len(parts) >= 2 and parts[0] in ("require", "module"):
-                        if "." in parts[1]:
-                            deps.append(parts[1])
+                    if len(parts) >= 2 and parts[0] in ("require", "module") and "." in parts[1]:
+                        deps.append(parts[1])
 
             elif filename == "Cargo.toml":
                 import tomllib as _toml
@@ -270,9 +293,11 @@ class CodebaseScanner:
 
             elif filename == "pom.xml":
                 try:
-                    import xml.etree.ElementTree as ET
+                    # pom.xml is a local manifest owned by the repository being
+                    # scanned (not untrusted network input), so stdlib parsing is fine.
+                    import xml.etree.ElementTree as ET  # nosec B405
 
-                    root = ET.fromstring(content)
+                    root = ET.fromstring(content)  # nosec B314
                     ns = {"m": "http://maven.apache.org/POM/4.0.0"}
                     for dep in root.findall(".//m:dependencies/m:dependency", ns):
                         group = dep.findtext("m:groupId", default="", namespaces=ns)

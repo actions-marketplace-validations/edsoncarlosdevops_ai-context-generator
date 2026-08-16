@@ -36,3 +36,25 @@ def test_custom_config_file(tmp_path: Path):
 
     assert config.generator.model == "claude-3-5-sonnet-20241022"
     assert config.generator.max_tokens == 8000
+
+
+def test_timeout_and_max_files_parsing(tmp_path: Path):
+    (tmp_path / ".ai_context.toml").write_text(
+        "[generator]\ntimeout = 30\n\n[scan]\nmax_files = 5000\n"
+    )
+
+    config = load_config(tmp_path)
+
+    assert config.generator.timeout == 30.0
+    assert config.scan.max_files == 5000
+
+
+def test_invalid_timeout_and_max_files_are_clamped(tmp_path: Path):
+    (tmp_path / ".ai_context.toml").write_text(
+        "[generator]\ntimeout = -5\n\n[scan]\nmax_files = -1\n"
+    )
+
+    config = load_config(tmp_path)
+
+    assert config.generator.timeout == 120.0  # default restored
+    assert config.scan.max_files == 100000  # default restored

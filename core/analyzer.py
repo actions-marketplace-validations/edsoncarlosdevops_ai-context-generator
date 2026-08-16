@@ -226,9 +226,10 @@ class ProjectAnalyzer:
             domain = "general"
 
         # Override domain from infra if IaC-heavy
-        if not any(f in frameworks for f in ["FastAPI", "Django", "React", "Next.js"]):
-            if "Terraform" in infra_tools or "Pulumi" in infra_tools:
-                domain = "devops"
+        if not any(f in frameworks for f in ["FastAPI", "Django", "React", "Next.js"]) and (
+            "Terraform" in infra_tools or "Pulumi" in infra_tools
+        ):
+            domain = "devops"
 
         # Security risk level
         high_risk_domains = {"fintech", "robotics", "devops", "embedded"}

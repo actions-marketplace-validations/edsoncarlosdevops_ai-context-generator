@@ -114,7 +114,10 @@ class ContextGenerator:
 
     def generate(self, force_replace: bool = False) -> GenerationResult:
         scanner = CodebaseScanner(
-            self.workspace_path, self.config.scan.exclude_dirs, self.config.scan.max_file_size_kb
+            self.workspace_path,
+            self.config.scan.exclude_dirs,
+            self.config.scan.max_file_size_kb,
+            self.config.scan.max_files,
         )
         scan_result = scanner.scan()
 

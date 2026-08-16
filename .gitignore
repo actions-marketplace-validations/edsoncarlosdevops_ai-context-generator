@@ -62,6 +62,7 @@ venv.bak/
 
 # Linters / caches
 .ruff_cache/
+.mypy_cache/
 
 # Configuration
 .ai_context.toml

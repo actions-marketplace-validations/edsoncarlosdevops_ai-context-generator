@@ -10,6 +10,7 @@ class GeneratorConfig:
     language: str = "english"
     max_lines: int = 150
     max_tokens: int = 4096
+    timeout: float = 120.0  # seconds for each LLM API call
 
 
 @dataclass
@@ -62,6 +63,7 @@ class ScanConfig:
         ]
     )
     max_file_size_kb: int = 100
+    max_files: int = 100000  # hard cap to keep scanning predictable on huge monorepos
 
 
 @dataclass
@@ -100,6 +102,12 @@ def load_config(workspace_path: Path, config_path: Path | None = None) -> AppCon
         gen_data = _filter_known("generator", data.get("generator", {}), gen_fields)
         out_data = data.get("output", {})
         scan_data = _filter_known("scan", data.get("scan", {}), scan_fields)
+
+        # Sanity-clamp numeric values so a broken config can't hang the tool.
+        if "timeout" in gen_data and gen_data["timeout"] <= 0:
+            gen_data["timeout"] = GeneratorConfig.timeout
+        if "max_files" in scan_data and scan_data["max_files"] <= 0:
+            scan_data["max_files"] = ScanConfig.max_files
 
         # Bridge semantics: if [output] section exists, any bridge flag
         # the user did NOT list is treated as disabled (opt-in model).

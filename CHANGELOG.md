@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`.env` support** — API keys can now live in a `.env` file at the workspace root
+  (loaded automatically via `python-dotenv`); see `.env.example`.
+- **Performance limits** — new `--max-files` CLI flag and `scan.max_files` config
+  option (hard cap on files scanned), plus `--timeout` flag / `generator.timeout`
+  for LLM API calls.
+- **CI hardening** — the CI workflow now runs `mypy` type checks, a `bandit` security
+  scan, and pytest coverage (with Codecov upload).
+- **Developer tooling** — `[project.optional-dependencies] dev` group with pytest,
+  pytest-cov, ruff, mypy and bandit; `tool.mypy`, `tool.bandit` and `tool.coverage`
+  configs in `pyproject.toml`.
+- **Structured documentation** — new `docs/` folder (getting-started, configuration
+  reference, CI/CD integration, architecture, contributing) and a slimmer README
+  with CI/coverage badges.
+- **`CODE_OF_CONDUCT.md`** — contributor covenant.
+
+### Changed
+
+- `CodebaseScanner` accepts an optional `max_files` parameter; `LLMClient` accepts an
+  optional `timeout` parameter.
+- `core.cli.main` now accepts an optional `argv` list, enabling proper CLI unit tests.
+
 ## [1.2.0] - 2025-08-11
 
 ### Fixed

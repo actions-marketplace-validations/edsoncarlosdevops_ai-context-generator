@@ -3,6 +3,8 @@ import os
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from core import __version__
 from core.analyzer import ProjectAnalyzer
 from core.config import BRIDGE_FLAG_TO_TOOL, load_config
@@ -10,6 +12,15 @@ from core.generator import ContextGenerator
 from core.llm_client import LLMClient
 from core.prompt_builder import PromptBuilder
 from core.scanner import CodebaseScanner
+
+
+def _load_env_file(workspace_path: Path) -> None:
+    """Load API keys from a `.env` file next to the workspace (optional)."""
+    env_path = workspace_path / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+    # Also honour a `.env` in the current directory for convenience.
+    load_dotenv(override=False)
 
 
 def _print_ok(msg: str) -> None:
@@ -39,7 +50,7 @@ def _github_summary(text: str) -> None:
             f.write(text + "\n")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="ai-context-generator",
         description="Scan a repository and generate AGENTS.md and AI context bridge files.",
@@ -61,6 +72,16 @@ def main() -> int:
         "--language", help="Output language: english, portuguese, spanish, french, german"
     )
     gen.add_argument(
+        "--max-files",
+        type=int,
+        help="Hard cap on the number of files scanned (default from config: 100000)",
+    )
+    gen.add_argument(
+        "--timeout",
+        type=float,
+        help="Timeout in seconds for each LLM API call (default from config: 120)",
+    )
+    gen.add_argument(
         "--replace", action="store_true", help="Replace existing AGENTS.md instead of enriching"
     )
     gen.add_argument(
@@ -74,7 +95,7 @@ def main() -> int:
         help="Skip generating all AI tool bridge files (.cursorrules, CLAUDE.md, etc.)",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.command != "generate":
         parser.print_help()
@@ -95,6 +116,10 @@ def main() -> int:
         config.generator.language = args.language
     if args.base_url:
         config.generator.base_url = args.base_url
+    if args.timeout:
+        config.generator.timeout = args.timeout
+    if args.max_files:
+        config.scan.max_files = args.max_files
 
     if args.no_bridge:
         config.output.cursorrules = False
@@ -115,7 +140,10 @@ def main() -> int:
         print("=" * 50)
 
         scanner = CodebaseScanner(
-            workspace_path, config.scan.exclude_dirs, config.scan.max_file_size_kb
+            workspace_path,
+            config.scan.exclude_dirs,
+            config.scan.max_file_size_kb,
+            config.scan.max_files,
         )
         scan = scanner.scan()
         analyzer = ProjectAnalyzer()
@@ -154,16 +182,22 @@ def main() -> int:
         return 0
 
     # --- GENERATE MODE ---
+    _load_env_file(workspace_path)
     api_key = args.api_key or os.environ.get("AI_API_KEY") or os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        _print_err("API key required. Pass --api-key or set AI_API_KEY environment variable.")
+        _print_err(
+            "API key required. Pass --api-key, set AI_API_KEY / OPENAI_API_KEY, "
+            "or add AI_API_KEY to a .env file in your workspace root."
+        )
         _print_err("Supported providers: DeepSeek, OpenAI, Anthropic, Ollama (local)")
         return 1
 
     print("\n\033[1mai-context-generator\033[0m")
     print(f"  Workspace: {workspace_path}")
     print(f"  Model    : {config.generator.model}")
-    print(f"  Language : {config.generator.language}\n")
+    print(f"  Language : {config.generator.language}")
+    print(f"  Timeout  : {config.generator.timeout}s")
+    print(f"  Max files: {config.scan.max_files}\n")
 
     try:
         llm = LLMClient(
@@ -171,6 +205,7 @@ def main() -> int:
             config.generator.model,
             config.generator.base_url,
             config.generator.max_tokens,
+            config.generator.timeout,
         )
         generator = ContextGenerator(workspace_path, config, llm)
         result = generator.generate(force_replace=args.replace)

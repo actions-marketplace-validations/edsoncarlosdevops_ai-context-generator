@@ -131,7 +131,7 @@ jobs:
           names = zipfile.ZipFile(wheel).namelist()
           assert 'ai_context_generator/prompts/generate_agents.md' in names, names
           print('OK — prompt template is packaged')
-          EOF"
+          EOF
 
   release:
     name: Release

@@ -82,6 +82,16 @@ AGENTS.md ─── Single Source of Truth
 
 **Smart updates (cost-saving):** The tool stores a lightweight `.ai-context.sig` signature file in your repo. When the detected project profile is unchanged, the paid LLM call is **skipped entirely** and the existing `AGENTS.md` is kept. When the profile does change, the generated content is compared with the current file — if the architecture hasn't changed significantly (less than 10% diff), no files are written, keeping your git history clean. Commit `.ai-context.sig` alongside `AGENTS.md` to benefit in CI.
 
+**Grounded in your actual repository.** The generator does not just send a list of
+detected frameworks to the LLM. It also sends the real directory layout, entry
+points, root config files, direct dependencies and the build/test commands it
+verified in your manifests — and the prompt forbids referencing anything that is
+not in that evidence. Fewer generic rules, more rules a reviewer can actually check.
+
+**Safe against untrusted repositories.** An existing `AGENTS.md` is fed back to the
+model fenced as untrusted data, with injected fence markers stripped, so a hostile
+file in a scanned repository cannot hijack the generator.
+
 ---
 
 ## Ecosystem
@@ -137,7 +147,7 @@ Add `ai-context-generator` to your `.pre-commit-config.yaml` to keep context fil
 ```yaml
 repos:
   - repo: https://github.com/edsoncarlosdevops/ai-context-generator
-    rev: v1.2.0
+    rev: v2.0.0
     hooks:
       - id: ai-context-generator
 ```
@@ -189,16 +199,30 @@ entirely optional** (sensible defaults are built in). The two most important kno
 
 ```toml
 [generator]
-model = "deepseek-chat"     # BYOM: any OpenAI-compatible endpoint
+model = "deepseek-chat"    # BYOM: any OpenAI-compatible endpoint
 language = "english"       # english, portuguese, spanish, french, german
 max_lines = 150
-
 timeout = 120.0            # seconds per LLM call
+max_retries = 3            # attempts for rate-limit / 5xx / connection errors
 
 [scan]
-exclude_dirs = [".git", "node_modules", ".venv", "dist", "build"]
+# Merged on top of the built-in defaults — never replaces them, so you can
+# never accidentally start scanning node_modules by adding one entry here.
+exclude_dirs = ["my_generated_dir"]
 max_file_size_kb = 100
 max_files = 100000         # hard cap for huge monorepos
+use_gitignore = true       # also skip plain directory names from .gitignore
+```
+
+Sensible directory exclusions ship out of the box (`node_modules`, `venv`,
+`target`, `vendor`, `.next`, `dist`, `build`, `coverage`, `.terraform`, …), and
+plain directory names from your `.gitignore` are skipped too.
+
+**Scriptable output.** `--json` prints a machine-readable summary, with or without
+`--dry-run`:
+
+```bash
+ai-context-generator generate --dry-run --json | jq '.domain, .frameworks'
 ```
 
 **Bridge files stay clean.** The tool automatically creates a `.gitattributes` file
@@ -239,6 +263,29 @@ For Ollama locally, use a dummy key and a custom `base_url`:
 ai-context-generator generate --workspace . --api-key dummy \
   --base-url http://localhost:11434/v1 --model llama3
 ```
+
+Model, base URL and language can also come from the environment
+(`AI_CONTEXT_MODEL`, `AI_CONTEXT_BASE_URL`, `AI_CONTEXT_LANGUAGE`), which is handy
+in CI. Precedence is **CLI flags > environment > `.ai_context.toml` > defaults**.
+
+---
+
+## Upgrading to 2.0
+
+The CLI, the `.ai_context.toml` format and the GitHub Action are **unchanged** —
+`ai-context-generator generate` works exactly as before.
+
+One breaking change affects anyone importing the package in Python: the top-level
+module was renamed from the generic `core` to `ai_context_generator`, so that
+installing this package no longer squats the `core` name in your environment.
+
+```diff
+- from core.scanner import CodebaseScanner
++ from ai_context_generator.scanner import CodebaseScanner
+```
+
+If you invoked the module directly, use `python -m ai_context_generator.cli`
+(or just the `ai-context-generator` console script).
 
 ---
 

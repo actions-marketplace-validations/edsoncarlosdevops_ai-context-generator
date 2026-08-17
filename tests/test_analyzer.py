@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from core.analyzer import ProjectAnalyzer, _matches
-from core.scanner import CodebaseScanner
+from ai_context_generator.analyzer import ProjectAnalyzer, _matches
+from ai_context_generator.scanner import CodebaseScanner
 
 
 def _profile(tmp_path: Path, files: dict[str, str]):

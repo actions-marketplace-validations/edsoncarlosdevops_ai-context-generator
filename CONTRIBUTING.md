@@ -54,19 +54,19 @@ Before submitting a Pull Request, please ensure all checks pass:
 pytest tests/
 
 # Run linter
-ruff check core/
+ruff check ai_context_generator/
 
 # Run format check
-ruff format core/ --check
+ruff format ai_context_generator/ --check
 ```
 
 ---
 
 ## 🚀 How to Add Support for a New AI Tool Bridge
 
-1. Open `core/scanner.py` and add the tool's signature file to `AI_TOOL_SIGNATURES`.
-2. Open `core/config.py` and add a boolean flag to `OutputConfig`.
-3. Open `core/bridge_writer.py` and add the file generator method.
+1. Open `ai_context_generator/scanner.py` and add the tool's signature file to `AI_TOOL_SIGNATURES`.
+2. Open `ai_context_generator/config.py` and add a boolean flag to `OutputConfig`.
+3. Open `ai_context_generator/bridge_writer.py` and add the file generator method.
 4. Update `examples/.ai_context.toml` and `README.md` to reflect the new tool.
 5. Add unit test coverage in `tests/test_bridge_writer.py`.
 

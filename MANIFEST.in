@@ -1,1 +1,2 @@
-recursive-include core/prompts *.md
+recursive-include ai_context_generator/prompts *.md
+include ai_context_generator/py.typed

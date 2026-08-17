@@ -36,14 +36,28 @@ inputs:
     description: 'Skip generating bridge files (.cursorrules, CLAUDE.md, etc.) — only write AGENTS.md'
     required: false
     default: 'false'
+  timeout:
+    description: 'Timeout in seconds for each LLM API call'
+    required: false
+    default: '120'
+  max_files:
+    description: 'Hard cap on the number of files scanned'
+    required: false
+    default: '100000'
+  config:
+    description: 'Path to a .ai_context.toml config file (defaults to the workspace root)'
+    required: false
   github_token:
     description: 'GitHub token for opening PRs. Defaults to the built-in GITHUB_TOKEN.'
     required: false
 
 outputs:
   agents_md_written:
-    description: 'true if AGENTS.md was written or updated, false if skipped (no significant change)'
+    description: 'true if any AI context file changed on disk, false if everything was already up-to-date'
     value: ${{ steps.generate.outputs.agents_md_written }}
+  agents_md_updated:
+    description: 'true if AGENTS.md itself was rewritten by the LLM this run'
+    value: ${{ steps.generate.outputs.agents_md_updated }}
 
 runs:
   using: "composite"
@@ -53,24 +67,27 @@ runs:
       with:
         python-version: '3.12'
 
-    - name: Install dependencies
-      run: pip install -r ${{ github.action_path }}/requirements.txt -q
+    - name: Install ai-context-generator
+      run: pip install "${{ github.action_path }}" -q
       shell: bash
 
     - name: Generate AI context files
       id: generate
       shell: bash
       env:
-        # Passed via env so the secret never appears on the command line.
+        # Passed via env so the secret never appears on the command line or in logs.
         AI_API_KEY: ${{ inputs.ai_api_key }}
       run: |
-        # Run as a module from the action path so `core.*` imports resolve.
-        export PYTHONPATH="${{ github.action_path }}"
-        CMD=(python -m core.cli generate \
-          --workspace "${{ github.workspace }}" \
-          --model "${{ inputs.model }}" \
-          --base-url "${{ inputs.base_url }}" \
-          --language "${{ inputs.language }}")
+        CMD=(ai-context-generator generate
+          --workspace "${{ github.workspace }}"
+          --model "${{ inputs.model }}"
+          --base-url "${{ inputs.base_url }}"
+          --language "${{ inputs.language }}"
+          --timeout "${{ inputs.timeout }}"
+          --max-files "${{ inputs.max_files }}")
+        if [ -n "${{ inputs.config }}" ]; then
+          CMD+=(--config "${{ inputs.config }}")
+        fi
         if [ "${{ inputs.replace }}" = "true" ]; then
           CMD+=(--replace)
         fi
@@ -78,21 +95,26 @@ runs:
           CMD+=(--no-bridge)
         fi
 
+        # `shell: bash` runs with `set -e`, so a non-zero exit aborts the step
+        # here and the failure is annotated by the CLI itself.
         echo "::group::ai-context-generator output"
         "${CMD[@]}"
-        EXIT_CODE=$?
         echo "::endgroup::"
 
-        if [ $EXIT_CODE -ne 0 ]; then
-          echo "::error::ai-context-generator failed. Check your API key and model name."
-          exit $EXIT_CODE
+        # The CLI reports whether AGENTS.md itself was rewritten. Renamed so it
+        # cannot collide with the change-detection output computed below.
+        if [ -f "$GITHUB_OUTPUT" ] && grep -q "^agents_md_written=" "$GITHUB_OUTPUT"; then
+          UPDATED="$(grep "^agents_md_written=" "$GITHUB_OUTPUT" | tail -n1 | cut -d= -f2)"
+        else
+          UPDATED="false"
         fi
+        echo "agents_md_updated=$UPDATED" >> "$GITHUB_OUTPUT"
 
         # Detect whether any context file changed. `git status --porcelain` also
         # catches brand-new (untracked) files, which `git diff` silently ignores.
         CHANGED="$(git -C "${{ github.workspace }}" status --porcelain -- \
-          AGENTS.md .ai-context.sig .cursorrules .windsurfrules .clinerules .rules \
-          CONVENTIONS.md CLAUDE.md .github/copilot-instructions.md \
+          AGENTS.md .ai-context.sig .gitattributes .cursorrules .windsurfrules \
+          .clinerules .rules CONVENTIONS.md CLAUDE.md .github/copilot-instructions.md \
           .amazonq/rules/project-rules.md .continue/rules.md 2>/dev/null)"
         if [ -z "$CHANGED" ]; then
           echo "agents_md_written=false" >> "$GITHUB_OUTPUT"

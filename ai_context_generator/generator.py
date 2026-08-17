@@ -1,17 +1,26 @@
 import difflib
 import hashlib
 import json
-from dataclasses import asdict, dataclass, replace
+import re
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
-from core.analyzer import ProjectAnalyzer, ProjectProfile
-from core.bridge_writer import BridgeWriter
-from core.config import BRIDGE_FLAG_TO_TOOL, AppConfig, OutputConfig
-from core.llm_client import LLMClient
-from core.prompt_builder import PromptBuilder
-from core.scanner import CodebaseScanner, ScanResult
+from ai_context_generator.analyzer import ProjectAnalyzer, ProjectProfile
+from ai_context_generator.bridge_writer import BridgeWriter
+from ai_context_generator.config import BRIDGE_FLAG_TO_TOOL, AppConfig, OutputConfig
+from ai_context_generator.llm_client import LLMClient
+from ai_context_generator.prompt_builder import PromptBuilder
+from ai_context_generator.scanner import CodebaseScanner, ScanResult
 
 SIGNATURE_FILE = ".ai-context.sig"
+
+# Files never rewritten in place without the tool's own marker.
+GITATTRIBUTES_START = "# >>> ai-context-generator (auto-managed) >>>"
+GITATTRIBUTES_END = "# <<< ai-context-generator <<<"
+
+# Below this ratio of changed lines, a regenerated AGENTS.md is considered
+# equivalent to the existing one and is not written.
+MIN_DELTA_TO_WRITE = 0.10
 
 
 @dataclass
@@ -25,6 +34,16 @@ class GenerationResult:
     agents_md_lines: int
     bridge_files_written: list[str]
     message: str
+    bridge_files_skipped: list[str] = field(default_factory=list)
+    domain: str = "general"
+    infra_tools: list[str] = field(default_factory=list)
+    llm_called: bool = False
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    scan_truncated: bool = False
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 class ContextGenerator:
@@ -87,30 +106,29 @@ class ContextGenerator:
         - Exclude them from language statistics
         """
         ga_path = self.workspace_path / ".gitattributes"
-        marker_start = "# >>> ai-context-generator (auto-managed) >>>"
-        marker_end = "# <<< ai-context-generator <<<"
 
-        managed_lines = [marker_start]
-        # Always include the signature file
-        managed_lines.append(f"{SIGNATURE_FILE} linguist-generated=true")
-        for bf in sorted(bridge_files):
-            managed_lines.append(f"{bf} linguist-generated=true")
-        managed_lines.append(marker_end)
+        managed_lines = [GITATTRIBUTES_START, f"{SIGNATURE_FILE} linguist-generated=true"]
+        managed_lines += [f"{bf} linguist-generated=true" for bf in sorted(bridge_files)]
+        managed_lines.append(GITATTRIBUTES_END)
         managed_block = "\n".join(managed_lines) + "\n"
 
-        if ga_path.exists():
-            existing = ga_path.read_text(encoding="utf-8")
-            # Replace existing managed block if present
-            import re as _re
-
-            pattern = _re.escape(marker_start) + r".*?" + _re.escape(marker_end) + r"\n?"
-            if marker_start in existing:
-                updated = _re.sub(pattern, managed_block, existing, flags=_re.DOTALL)
-            else:
-                updated = existing.rstrip("\n") + "\n\n" + managed_block
-            ga_path.write_text(updated, encoding="utf-8")
-        else:
+        if not ga_path.exists():
             ga_path.write_text(managed_block, encoding="utf-8")
+            return
+
+        try:
+            existing = ga_path.read_text(encoding="utf-8")
+        except OSError:
+            return
+        if GITATTRIBUTES_START in existing:
+            pattern = (
+                re.escape(GITATTRIBUTES_START) + r".*?" + re.escape(GITATTRIBUTES_END) + r"\n?"
+            )
+            updated = re.sub(pattern, managed_block, existing, flags=re.DOTALL)
+        else:
+            updated = existing.rstrip("\n") + "\n\n" + managed_block
+        if updated != existing:
+            ga_path.write_text(updated, encoding="utf-8")
 
     def generate(self, force_replace: bool = False) -> GenerationResult:
         scanner = CodebaseScanner(
@@ -118,6 +136,7 @@ class ContextGenerator:
             self.config.scan.exclude_dirs,
             self.config.scan.max_file_size_kb,
             self.config.scan.max_files,
+            self.config.scan.use_gitignore,
         )
         scan_result = scanner.scan()
 
@@ -129,11 +148,17 @@ class ContextGenerator:
 
         agents_md_path = self.workspace_path / "AGENTS.md"
         sig_path = self.workspace_path / SIGNATURE_FILE
-        stored_sig = sig_path.read_text(encoding="utf-8").strip() if sig_path.exists() else ""
+        stored_sig = ""
+        if sig_path.exists():
+            try:
+                stored_sig = sig_path.read_text(encoding="utf-8").strip()
+            except OSError:
+                stored_sig = ""
         current_sig = self._profile_signature(profile)
 
         agents_md_content = ""
         write_agents = False
+        llm_called = False
         msg = ""
 
         if not self.config.output.agents_md:
@@ -143,9 +168,10 @@ class ContextGenerator:
             msg = "AGENTS.md already up-to-date, no changes needed."
         else:
             agents_md_content = self.llm_client.generate(prompt)
+            llm_called = True
             if not force_replace and profile.existing_agents_md:
                 delta = self._calculate_delta(profile.existing_agents_md, agents_md_content)
-                if delta <= 0.10:
+                if delta <= MIN_DELTA_TO_WRITE:
                     msg = "AGENTS.md already up-to-date, no changes needed."
                 else:
                     write_agents = True
@@ -169,25 +195,34 @@ class ContextGenerator:
 
         # Mark generated bridge files as machine-generated in .gitattributes
         # so they collapse in GitHub PR diffs and are clearly marked as auto-managed.
-        if bridge_files:
+        if bridge_files and self.config.output.gitattributes:
             self._write_gitattributes(bridge_files)
 
-        total = sum(scan_result.language_counts.values())
-        lang_percs = ""
-        if total > 0:
-            top_langs = sorted(
-                scan_result.language_counts.items(), key=lambda x: x[1], reverse=True
-            )[:3]
-            lang_percs = ", ".join(f"{lang} ({int(c / total * 100)}%)" for lang, c in top_langs)
+        usage = getattr(self.llm_client, "last_usage", None)
 
         return GenerationResult(
             scanned_files=scan_result.total_files,
             primary_language=profile.primary_language,
-            language_percentages=lang_percs,
+            language_percentages=self._format_percentages(scan_result),
             frameworks=profile.frameworks,
             cicd=profile.cicd_platforms,
             agents_md_written=write_agents and self.config.output.agents_md,
             agents_md_lines=len(agents_md_content.splitlines()),
             bridge_files_written=bridge_files,
             message=msg,
+            bridge_files_skipped=bridge_writer.skipped,
+            domain=profile.domain,
+            infra_tools=profile.infra_tools,
+            llm_called=llm_called,
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) if usage else 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) if usage else 0,
+            scan_truncated=scan_result.truncated,
         )
+
+    @staticmethod
+    def _format_percentages(scan_result: ScanResult) -> str:
+        total = sum(scan_result.language_counts.values())
+        if not total:
+            return ""
+        top_langs = sorted(scan_result.language_counts.items(), key=lambda x: (-x[1], x[0]))[:3]
+        return ", ".join(f"{lang} ({int(c / total * 100)}%)" for lang, c in top_langs)

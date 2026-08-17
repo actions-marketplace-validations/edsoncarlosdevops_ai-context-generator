@@ -21,6 +21,13 @@ on:
       PYPI_API_TOKEN:
         required: false
 
+# Serialize publishes rather than letting two triggers (e.g. a manual dispatch
+# racing the CI-triggered call) build and upload concurrently. Never cancel an
+# in-flight publish — a half-finished upload is worse than a queued one.
+concurrency:
+  group: pypi-publish
+  cancel-in-progress: false
+
 jobs:
   pypi-publish:
     name: Build and publish package to PyPI

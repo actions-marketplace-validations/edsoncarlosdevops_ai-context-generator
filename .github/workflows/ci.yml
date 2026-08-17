@@ -138,8 +138,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, test, validate-workflows, validate-examples]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    timeout-minutes: 10
     permissions:
       contents: write
+    outputs:
+      released: ${{ steps.tag_check.outputs.exists == 'false' }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,7 +153,14 @@ jobs:
         id: version
         run: |
           VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version '$VERSION' read from pyproject.toml is not valid semver (X.Y.Z) — aborting release." >&2
+            exit 1
+          fi
           echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          # Floating major tag: 2.0.0 -> v2. Hardcoding v1 here used to point the
+          # v1 tag at a v2 release the moment the major version was bumped.
+          echo "major_tag=v${VERSION%%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag already exists
         id: tag_check
@@ -168,10 +179,34 @@ jobs:
           git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
           git push origin "${{ steps.version.outputs.version }}"
 
-      - name: Update floating v1 tag
+      - name: Update floating major tag
         if: steps.tag_check.outputs.exists == 'false'
         run: |
+          MAJOR_TAG="${{ steps.version.outputs.major_tag }}"
+          # Belt-and-braces: refuse to force-push anything that isn't a plain
+          # `vN` ref, however `version` was derived above.
+          if ! [[ "$MAJOR_TAG" =~ ^v[0-9]+$ ]]; then
+            echo "::error::Refusing to force-push malformed floating tag '$MAJOR_TAG'." >&2
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -fa v1 -m "Update v1 floating tag to ${{ steps.version.outputs.version }}"
-          git push origin v1 --force
+          git tag -fa "$MAJOR_TAG" -m "Update $MAJOR_TAG floating tag to ${{ steps.version.outputs.version }}"
+          git push origin "$MAJOR_TAG" --force
+
+  publish:
+    name: Publish to PyPI
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    timeout-minutes: 10
+    # Tags pushed with the default GITHUB_TOKEN do NOT trigger other workflows,
+    # so the `on: push: tags:` trigger in publish-pypi.yml never fired for a
+    # release cut by the job above. Calling the workflow directly is what makes
+    # a release actually reach PyPI. Only the one secret the callee declares is
+    # passed through — not the whole repository secret set.
+    uses: ./.github/workflows/publish-pypi.yml
+    permissions:
+      id-token: write
+      contents: read
+    secrets:
+      PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}

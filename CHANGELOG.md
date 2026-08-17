@@ -7,6 +7,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-08-17
+
+### Breaking
+
+- **Package renamed `core` → `ai_context_generator`.** Installing this project no
+  longer places a generic top-level `core` package in site-packages, where it could
+  shadow or be shadowed by an unrelated module. The CLI, the `.ai_context.toml`
+  format and the GitHub Action inputs are unchanged; only direct Python imports and
+  `python -m core.cli` need updating.
+
+### Fixed
+
+- **`tests/` directories were not detected.** The check compared the literal string
+  `test` against path components, so a plural `tests/` directory never matched,
+  while a substring match on filenames flagged `latest_release.py` as a test file.
+  Detection now uses a dedicated set of test directory names plus per-ecosystem
+  filename conventions (`test_*.py`, `*_test.go`, `*.spec.ts`, …).
+- **Phantom infrastructure detection.** Infra tools were matched by substring
+  against the joined file list, so any repository with a `samples/` directory was
+  reported as using AWS SAM. Matching is now anchored to exact filenames, file
+  extensions and directory names.
+- **Dead infra signals.** `serverless.yml`, `Chart.yaml`, `values.yaml`, `cdk.json`
+  and SAM templates were listed as detectable but could never reach the analyzer,
+  because the scanner never collected them. They are now detected, along with
+  Kustomize, Skaffold, Bicep and Vagrant.
+- **Build output was scanned as source.** The default `exclude_dirs` missed `venv`,
+  `env`, `target`, `vendor`, `out`, `bin`, `obj`, `coverage`, `.next`, `.nuxt`,
+  `.tox`, `.gradle`, `.terraform` and more, skewing language statistics on most
+  real projects. Plain directory names from the repository `.gitignore` are now
+  skipped as well (`scan.use_gitignore`, `--no-gitignore`).
+- **`[scan] exclude_dirs` replaced the defaults** instead of extending them, so
+  adding a single directory silently re-enabled scanning of `node_modules`.
+- **Undocumented-but-advertised environment variables.** `.env.example` documented
+  `AI_CONTEXT_MODEL`, `AI_CONTEXT_BASE_URL` and `AI_CONTEXT_LANGUAGE`, which no code
+  read. They are now implemented, with precedence CLI > env > config > defaults.
+- **`--timeout 0` and `--max-files 0` were silently ignored** because the flags were
+  tested for truthiness rather than for being set.
+- **ANSI colour codes leaked into non-terminal output**, garbling piped output and
+  CI logs. Colour now honours `NO_COLOR`, `FORCE_COLOR` and TTY detection.
+- **Pointless sleep after the final LLM retry** — the client no longer backs off
+  after its last attempt.
+- **Unreachable error handling in `action.yml`** — `EXIT_CODE=$?` could never run
+  under the `set -e` that composite `shell: bash` steps use.
+- Typos in the `[output]` config section counted as explicit user choices and
+  suppressed bridge auto-detection; unknown keys are now ignored for that purpose.
+- `max_tokens`, `max_lines`, `max_retries` and `max_file_size_kb` are now clamped to
+  sane values when a config supplies zero or negative numbers.
+
+### Added
+
+- **Repository evidence in the prompt.** The LLM now receives the real directory
+  layout, entry points, root config files, direct dependencies and the verified
+  build/test commands — and is instructed never to reference a path, command or
+  library that is not in that evidence. Previously it saw only a dozen summary
+  fields and was asked to be specific anyway.
+- **Prompt-injection hardening.** An existing `AGENTS.md` is fenced as untrusted
+  repository content, injected copies of the fence markers are stripped, oversized
+  files are truncated, and both the template and the system prompt instruct the
+  model to treat the block as inert data.
+- **`--json`** — machine-readable summary for both dry runs and real runs.
+- **`--max-retries`** / `generator.max_retries`, and **`--no-gitignore`**.
+- **`output.gitattributes`** to opt out of the managed `.gitattributes` block.
+- Token usage is reported after each run.
+- New analyzer signals: `machine-learning` domain, architecture hints derived from
+  the real directory layout, a 10%-bucketed language breakdown, and additional
+  frameworks (Litestar, Remix, Astro, Quarkus, Laravel, Symfony, PyTorch,
+  TensorFlow, LangChain, …). More languages are recognised (C, Elixir, Lua, SQL, …).
+- Poetry-style dependencies (`[tool.poetry.*]`) are now parsed from `pyproject.toml`;
+  CircleCI and Bitbucket Pipelines are recognised as CI platforms.
+- Hand-written bridge files that are left untouched are now reported explicitly
+  instead of being silently skipped.
+- `action.yml` gained `timeout`, `max_files` and `config` inputs, plus a new
+  `agents_md_updated` output (true only when `AGENTS.md` itself was rewritten).
+- CI now verifies the packaged wheel ships the prompt template and that the CLI
+  runs end-to-end.
+
+### Changed
+
+- **Re-running on an unchanged repository no longer costs a second LLM call.** The
+  files this tool generates (and hidden directories) used to feed back into the
+  project profile, invalidating the cached signature on every run. They are now
+  excluded, and a regression test asserts three consecutive runs make one call.
+- The `openai` SDK's internal retry layer is disabled so backoff and error
+  classification live in one place; HTTP 404 now fails fast with a message naming
+  the model and base URL.
+- Test suite grown from 30 to 114 tests; coverage gate raised from 70% to 85%
+  (currently 91%).
+
+## [1.3.0] - 2025-08-17
+
 ### Added
 
 - **`.env` support** — API keys can now live in a `.env` file at the workspace root

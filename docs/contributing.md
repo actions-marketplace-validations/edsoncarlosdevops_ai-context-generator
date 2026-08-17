@@ -41,16 +41,16 @@ Every PR must pass all of these locally:
 pytest tests/
 
 # Linter
-ruff check core/ tests/
+ruff check ai_context_generator/ tests/
 
 # Formatter
-ruff format --check core/ tests/
+ruff format --check ai_context_generator/ tests/
 
 # Type checker
-mypy core/
+mypy ai_context_generator/
 
 # Security scan
-bandit -r core/ -c pyproject.toml -q
+bandit -r ai_context_generator/ -c pyproject.toml -q
 ```
 
 These same checks run in CI on every push and pull request
@@ -61,7 +61,7 @@ These same checks run in CI on every push and pull request
 ## Project Layout
 
 ```
-core/
+ai_context_generator/
 ├── scanner.py       # Walk the repo: languages, deps, CI/CD, infra, AI tool files
 ├── analyzer.py      # ScanResult → ProjectProfile (frameworks, domain, security)
 ├── prompt_builder.py# ProjectProfile → domain-aware LLM prompt
@@ -81,10 +81,10 @@ wrappers/            # Azure DevOps / GitLab CI templates
 
 ## Adding a New AI Tool Bridge
 
-1. **`core/scanner.py`** — add the tool's signature file to `AI_TOOL_SIGNATURES`.
-2. **`core/config.py`** — add a boolean flag to `OutputConfig` and an entry in
+1. **`ai_context_generator/scanner.py`** — add the tool's signature file to `AI_TOOL_SIGNATURES`.
+2. **`ai_context_generator/config.py`** — add a boolean flag to `OutputConfig` and an entry in
    `BRIDGE_FLAG_TO_TOOL`.
-3. **`core/bridge_writer.py`** — add the file-generation method.
+3. **`ai_context_generator/bridge_writer.py`** — add the file-generation method.
 4. **`docs/configuration-reference.md`** — document the new flag.
 5. **`tests/`** — add unit test coverage in `tests/test_bridge_writer.py`.
 
@@ -92,9 +92,9 @@ wrappers/            # Azure DevOps / GitLab CI templates
 
 ## Adding a New Domain Playbook
 
-1. **`core/analyzer.py`** — add signals to `DOMAIN_SIGNALS` and (optionally) a
+1. **`ai_context_generator/analyzer.py`** — add signals to `DOMAIN_SIGNALS` and (optionally) a
    priority in the tie-breaker list.
-2. **`core/prompt_builder.py`** — add a `DOMAIN_PLAYBOOKS` entry with concrete,
+2. **`ai_context_generator/prompt_builder.py`** — add a `DOMAIN_PLAYBOOKS` entry with concrete,
    reviewable rules.
 3. Add tests in `tests/test_analyzer.py`.
 
@@ -105,7 +105,7 @@ wrappers/            # Azure DevOps / GitLab CI templates
 - [ ] Focused: one logical change per PR
 - [ ] Tests added/updated
 - [ ] `ruff check` + `ruff format --check` pass
-- [ ] `mypy core/` passes
-- [ ] `bandit -r core/ -c pyproject.toml -q` passes
+- [ ] `mypy ai_context_generator/` passes
+- [ ] `bandit -r ai_context_generator/ -c pyproject.toml -q` passes
 - [ ] Docs updated if configuration or behaviour changed
 - [ ] CI is green

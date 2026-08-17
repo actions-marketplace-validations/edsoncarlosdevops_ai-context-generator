@@ -1,4 +1,4 @@
-from core.llm_client import LLMClient, LLMError
+from ai_context_generator.llm_client import LLMClient, LLMError
 
 
 class _Msg:

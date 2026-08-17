@@ -1,6 +1,6 @@
-from core.analyzer import ProjectProfile
-from core.config import AppConfig
-from core.prompt_builder import PromptBuilder
+from ai_context_generator.analyzer import ProjectProfile
+from ai_context_generator.config import AppConfig
+from ai_context_generator.prompt_builder import PromptBuilder
 
 
 def make_profile(existing: str | None = None) -> ProjectProfile:

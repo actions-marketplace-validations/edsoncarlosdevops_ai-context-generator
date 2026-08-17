@@ -19,19 +19,19 @@ jobs:
           cache: pip
 
       - name: Install dev dependencies
-        run: pip install ruff openai mypy bandit -q
+        run: pip install -e ".[dev]" -q
 
       - name: Ruff lint
-        run: ruff check core/ tests/ --output-format=github
+        run: ruff check ai_context_generator/ tests/ --output-format=github
 
       - name: Ruff format check
-        run: ruff format core/ tests/ --check
+        run: ruff format ai_context_generator/ tests/ --check
 
       - name: Mypy type check
-        run: mypy core/
+        run: mypy ai_context_generator/
 
       - name: Bandit security scan
-        run: bandit -r core/ -c pyproject.toml -q
+        run: bandit -r ai_context_generator/ -c pyproject.toml -q
 
   test:
     name: Unit Tests
@@ -48,7 +48,7 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pytest pytest-cov -q && pip install -e .
+        run: pip install -e ".[dev]" -q
 
       - name: Run tests with coverage
         run: pytest tests/ -v --tb=short
@@ -93,15 +93,15 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -q && pip install -e .
+        run: pip install -e . -q
 
       - name: Validate scanner on own repo
         run: |
           python -c "
           from pathlib import Path
-          from core.scanner import CodebaseScanner
-          from core.analyzer import ProjectAnalyzer
-          from core.config import load_config
+          from ai_context_generator.scanner import CodebaseScanner
+          from ai_context_generator.analyzer import ProjectAnalyzer
+          from ai_context_generator.config import load_config
 
           workspace = Path('.')
           cfg = load_config(workspace)
@@ -109,10 +109,29 @@ jobs:
           scan = scanner.scan()
           analyzer = ProjectAnalyzer()
           profile = analyzer.analyze(scan)
-          assert profile.primary_language, 'Primary language not detected'
+          assert profile.primary_language == 'Python', profile.primary_language
           assert profile.domain, 'Domain not detected'
+          assert profile.has_tests, 'tests/ directory not detected'
+          assert 'ai_context_generator' in profile.directory_tree, profile.directory_tree
+          assert 'GitHub Actions' in profile.cicd_platforms, profile.cicd_platforms
+          assert 'openai' in profile.key_dependencies, profile.key_dependencies
           print(f'OK — {profile.primary_language} / {profile.domain} / {profile.frameworks}')
           "
+
+      - name: Verify the CLI runs end-to-end (dry run)
+        run: ai-context-generator generate --dry-run --json
+
+      - name: Verify the packaged wheel contains the prompt template
+        run: |
+          pip install build -q
+          python -m build --wheel -o dist/
+          python - <<'EOF'
+          import glob, zipfile
+          wheel = glob.glob('dist/*.whl')[0]
+          names = zipfile.ZipFile(wheel).namelist()
+          assert 'ai_context_generator/prompts/generate_agents.md' in names, names
+          print('OK — prompt template is packaged')
+          EOF
 
   release:
     name: Release

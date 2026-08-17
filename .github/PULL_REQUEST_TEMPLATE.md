@@ -12,7 +12,7 @@ Briefly explain what changes were made in this Pull Request and why.
 
 ## Checklist
 
-- [ ] My code follows the code style of this project (`ruff check core/`).
+- [ ] My code follows the code style of this project (`ruff check ai_context_generator/`).
 - [ ] I have added tests covering my changes.
 - [ ] All new and existing tests pass (`pytest tests/`).
 - [ ] I have updated the documentation (`README.md`, `.ai_context.toml`) if applicable.

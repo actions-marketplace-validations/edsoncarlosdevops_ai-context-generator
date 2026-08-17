@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from core.analyzer import ProjectProfile
-from core.bridge_writer import BridgeWriter
-from core.config import OutputConfig
+from ai_context_generator.analyzer import ProjectProfile
+from ai_context_generator.bridge_writer import BridgeWriter
+from ai_context_generator.config import OutputConfig
 
 
 def test_bridge_writer_all_tools(tmp_path: Path):

@@ -32,7 +32,7 @@ CodebaseScanner ──► ScanResult ──► ProjectAnalyzer ──► Project
 
 ## Pipeline Stages
 
-### 1. `CodebaseScanner` (`core/scanner.py`)
+### 1. `CodebaseScanner` (`ai_context_generator/scanner.py`)
 
 Walks the repository and collects raw facts:
 
@@ -43,49 +43,69 @@ Walks the repository and collects raw facts:
 - **Infrastructure** — `Dockerfile`, `docker-compose*`, `*.tf`, Helm/K8s paths
 - **AI tool configs** — existing `.cursorrules`, `CLAUDE.md`, etc. (via `AI_TOOL_SIGNATURES`)
 - **Tests & build commands** — from manifests and `Makefile`
+- **Structural evidence** — directory tree (depth ≤ 3), entry points, root config
+  files. This is what lets the LLM name real paths instead of inventing them.
 
-Configurable via `[scan]`: `exclude_dirs`, `max_file_size_kb`, and a hard `max_files`
-cap so huge monorepos can't hang the tool.
+Configurable via `[scan]`: `exclude_dirs`, `max_file_size_kb`, `use_gitignore`, and a
+hard `max_files` cap so huge monorepos can't hang the tool.
 
-### 2. `ProjectAnalyzer` (`core/analyzer.py`)
+**Profile stability:** files this tool generates itself (`CLAUDE.md`,
+`.cursorrules`, `.continue/`, …) are excluded from the structural evidence, and
+hidden directories never enter the tree. Without that, the first run would change
+the profile, invalidate the cached signature, and bill a fresh LLM call on every
+subsequent run.
+
+### 2. `ProjectAnalyzer` (`ai_context_generator/analyzer.py`)
 
 Turns the raw `ScanResult` into a semantic `ProjectProfile`:
 
-- Primary/secondary languages (YAML excluded from ranking)
+- Primary/secondary languages (YAML/SQL/headers excluded from the primary slot)
+- **Language breakdown** — percentages bucketed to 10% so routine commits do not
+  invalidate the cached signature
 - **Framework detection** — boundary-aware keyword matching against `FRAMEWORK_SIGNALS`
   (`_matches()` avoids false positives like `pyreact` matching `react`)
 - **Domain detection** — most-voted domain from `DOMAIN_SIGNALS` (robotics, fintech,
   data-engineering, devops, web, embedded, general), with IaC overrides
 - **Security risk level** — `high` for risky domains/deps (JWT, OAuth, payments),
   `medium` above 30 dependencies, else `low`
-- **CI/CD platforms, infra tools, architecture hints**
+- **Infra tools** — mapped by exact filename / extension / directory name
+  (`_infra_label()`), never by substring, so `samples/` is not read as AWS SAM
+- **CI/CD platforms and architecture hints** — hints are derived from the real
+  directory layout (`services/`, `packages/`, `dags/`, `cmd`+`internal`+`pkg`, …)
 
-### 3. `PromptBuilder` (`core/prompt_builder.py`)
+### 3. `PromptBuilder` (`ai_context_generator/prompt_builder.py`)
 
-- Loads the Markdown template from `core/prompts/generate_agents.md` (ships inside
+- Loads the Markdown template from `ai_context_generator/prompts/generate_agents.md` (ships inside
   the package so it works from PyPI)
-- Injects the `ProjectProfile` as JSON
+- Injects the `ProjectProfile` as JSON, plus a readable **Repository Evidence**
+  section (layout, entry points, config files, dependencies, verified commands)
 - Applies a **domain playbook** (security + architecture rules per domain)
 - In **enrichment mode** (existing `AGENTS.md`), instructs the LLM to add only
   missing rules instead of duplicating
+- **Prompt-injection hardening:** repository content is fenced between
+  `<<<BEGIN_UNTRUSTED_REPOSITORY_CONTENT>>>` markers, any injected copies of those
+  markers are stripped, oversized files are truncated, and both the template and
+  the system prompt instruct the model to treat the block as inert data
 
-### 4. `LLMClient` (`core/llm_client.py`)
+### 4. `LLMClient` (`ai_context_generator/llm_client.py`)
 
 - Calls any OpenAI-compatible endpoint (`openai` SDK)
-- Smart retries: `RateLimitError` / `APIConnectionError` and 5xx are retried with
-  exponential backoff (1s, 2s, 4s); 401/403 fail fast
+- Smart retries: rate-limit, connection and timeout errors plus 5xx are retried
+  with exponential backoff (1s, 2s, …) and never sleep after the final attempt;
+  401/403/404 fail fast with an actionable message
+- Reports token usage per call (`last_usage`)
 - Validates output: strips markdown fences, rejects empty content, raises a clear
   error on truncated output (`finish_reason == "length"`)
 - Per-call `timeout` configurable
 
-### 5. `ContextGenerator` (`core/generator.py`) — the orchestrator
+### 5. `ContextGenerator` (`ai_context_generator/generator.py`) — the orchestrator
 
 - Computes a **profile signature** (hash of profile + model + language + limits)
 - If the stored `.ai-context.sig` matches and `AGENTS.md` exists → **skips the LLM call**
 - If content changed by <10% (`difflib.SequenceMatcher`) → keeps the current file
 - Writes `AGENTS.md`, persists the signature, and runs `BridgeWriter`
 
-### 6. `BridgeWriter` (`core/bridge_writer.py`)
+### 6. `BridgeWriter` (`ai_context_generator/bridge_writer.py`)
 
 Writes lightweight pointer files so every AI tool reads the same `AGENTS.md`:
 
@@ -102,7 +122,10 @@ marked as generated by this tool (`_is_managed`) — user files are never clobbe
 - Loads `.ai_context.toml`, merges CLI overrides
 - Loads `.env` (via `python-dotenv`) for API keys
 - `--dry-run` preview mode with no file writes
-- GitHub Actions annotations (`::error::`, `::notice::`) and step summary
+- `--json` machine-readable summary for both dry runs and real runs
+- Colour respects `NO_COLOR` / `FORCE_COLOR` and is off when stdout is not a TTY
+- GitHub Actions annotations (`::error::`, `::notice::`), step summary and
+  `GITHUB_OUTPUT`
 
 ---
 
@@ -117,6 +140,8 @@ marked as generated by this tool (`_is_managed`) — user files are never clobbe
 | Domain playbooks | Produce verifiable, project-specific rules — not generic advice |
 | `linguist-generated` in `.gitattributes` | Bridges collapse in PR diffs and don't skew language stats |
 | `openai` SDK only | Works with any OpenAI-compatible endpoint (BYOM) |
+| Untrusted-content fencing | A scanned repository must not be able to steer the generator |
+| Generated files excluded from the profile | Keeps the signature stable so reruns stay free |
 
 ---
 

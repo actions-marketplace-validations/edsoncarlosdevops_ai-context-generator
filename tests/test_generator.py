@@ -1,7 +1,7 @@
 from pathlib import Path
 
-from core.config import AppConfig
-from core.generator import ContextGenerator
+from ai_context_generator.config import AppConfig
+from ai_context_generator.generator import ContextGenerator
 
 
 class FakeLLM:

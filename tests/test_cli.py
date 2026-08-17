@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from core.cli import _load_env_file, main
+from ai_context_generator.cli import _load_env_file, main
 
 
 def test_missing_workspace_returns_error(tmp_path: Path, capsys):
@@ -53,7 +53,7 @@ def test_env_file_does_not_override_existing_env(tmp_path: Path, monkeypatch):
 
 
 def test_cli_module_runs_dry_run(tmp_path: Path, capsys):
-    """The entry point used by the GitHub Action (`python -m core.cli`)."""
+    """The entry point used by the GitHub Action (`python -m ai_context_generator.cli`)."""
     (tmp_path / "app.py").write_text("print('x')\n")
     rc = main(["generate", "--workspace", str(tmp_path), "--dry-run"])
     assert rc == 0

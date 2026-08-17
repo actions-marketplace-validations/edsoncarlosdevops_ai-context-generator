@@ -1,19 +1,25 @@
 name: Publish to PyPI
 
 on:
-  # Triggered automatically when the CI release job creates the version tag
-  # (e.g. v1.2.0). Requires a trusted publisher configured on PyPI for this
-  # repository (see README / https://pypi.org/manage/account/publishing/).
+  # In practice this rarely fires: tags pushed by CI use the default
+  # GITHUB_TOKEN, and GitHub does not let such a push trigger other workflows.
+  # Kept for the case where a maintainer pushes a `v*.*.*` tag by hand.
   push:
     tags:
       - 'v*.*.*'
   # Also allow publishing from a manually published GitHub Release.
   release:
     types: [published]
-  # Manual trigger, and the path used by the CI release job (tag pushes made
-  # with GITHUB_TOKEN cannot trigger this workflow on their own).
+  # Manual trigger for one-off / recovery publishes.
   workflow_dispatch:
+  # The path actually used by the CI release job in ci.yml, which calls this
+  # workflow directly right after cutting a new tag (see the `publish` job
+  # there) since the `push: tags:` trigger above cannot fire for it. The caller
+  # passes PYPI_API_TOKEN explicitly rather than `secrets: inherit`.
   workflow_call:
+    secrets:
+      PYPI_API_TOKEN:
+        required: false
 
 jobs:
   pypi-publish:

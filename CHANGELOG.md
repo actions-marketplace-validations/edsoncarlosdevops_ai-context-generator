@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned to `@v1`. The tag is now derived from the version (`2.0.0` → `v2`), `v2`
   has been created, and `v1` has been restored to the last 1.x release (v1.3.0).
   README and CI/CD docs now reference `@v2`.
+- **Release job hardening**, per AI PR review on #2: the version read from
+  `pyproject.toml` is now validated against `X.Y.Z` before any tag is cut, the
+  floating major tag is checked against `^v[0-9]+$` before it is force-pushed,
+  `secrets: inherit` on the PyPI publish call was replaced with passing only
+  `PYPI_API_TOKEN` explicitly (`publish-pypi.yml` now declares it under
+  `workflow_call: secrets:`), and both release-related jobs got a
+  `timeout-minutes` cap.
 
 ## [2.0.0] — 2026-08-17
 

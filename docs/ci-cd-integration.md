@@ -137,7 +137,7 @@ Add `ai-context-generator` to your `.pre-commit-config.yaml` to keep context fil
 repos:
   - repo: https://github.com/edsoncarlosdevops/ai-context-generator
 
-    rev: v1.3.0
+    rev: v2.0.0
     hooks:
       - id: ai-context-generator
 ```
@@ -161,7 +161,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: edsoncarlosdevops/ai-context-generator@v1
+      - uses: edsoncarlosdevops/ai-context-generator@v2
         with:
           ai_api_key: ${{ secrets.DEEPSEEK_API_KEY }}
           model: deepseek-chat

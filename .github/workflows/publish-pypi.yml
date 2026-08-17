@@ -10,8 +10,10 @@ on:
   # Also allow publishing from a manually published GitHub Release.
   release:
     types: [published]
-  # Manual trigger for testing after configuring the trusted publisher.
+  # Manual trigger, and the path used by the CI release job (tag pushes made
+  # with GITHUB_TOKEN cannot trigger this workflow on their own).
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   pypi-publish:

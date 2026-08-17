@@ -171,7 +171,7 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
-      - uses: edsoncarlosdevops/ai-context-generator@v1
+      - uses: edsoncarlosdevops/ai-context-generator@v2
         with:
           ai_api_key: ${{ secrets.DEEPSEEK_API_KEY }}
           model: deepseek-chat

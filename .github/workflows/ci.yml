@@ -140,6 +140,9 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
       contents: write
+    outputs:
+      released: ${{ steps.tag_check.outputs.exists == 'false' }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -150,6 +153,9 @@ jobs:
         run: |
           VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
           echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          # Floating major tag: 2.0.0 -> v2. Hardcoding v1 here used to point the
+          # v1 tag at a v2 release the moment the major version was bumped.
+          echo "major=v${VERSION%%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag already exists
         id: tag_check
@@ -168,10 +174,25 @@ jobs:
           git tag -a "${{ steps.version.outputs.version }}" -m "Release ${{ steps.version.outputs.version }}"
           git push origin "${{ steps.version.outputs.version }}"
 
-      - name: Update floating v1 tag
+      - name: Update floating major tag
         if: steps.tag_check.outputs.exists == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -fa v1 -m "Update v1 floating tag to ${{ steps.version.outputs.version }}"
-          git push origin v1 --force
+          git tag -fa "${{ steps.version.outputs.major }}" \
+            -m "Update ${{ steps.version.outputs.major }} floating tag to ${{ steps.version.outputs.version }}"
+          git push origin "${{ steps.version.outputs.major }}" --force
+
+  publish:
+    name: Publish to PyPI
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    # Tags pushed with the default GITHUB_TOKEN do NOT trigger other workflows,
+    # so the `on: push: tags:` trigger in publish-pypi.yml never fired for a
+    # release cut by the job above. Calling the workflow directly is what makes
+    # a release actually reach PyPI.
+    uses: ./.github/workflows/publish-pypi.yml
+    permissions:
+      id-token: write
+      contents: read
+    secrets: inherit

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Releases never reached PyPI.** The CI release job pushes the version tag with
+  the default `GITHUB_TOKEN`, and GitHub deliberately does not let such a push
+  trigger another workflow — so `publish-pypi.yml`'s `on: push: tags:` trigger
+  never fired. v1.3.0 and v2.0.0 were tagged but never published, leaving PyPI on
+  1.2.0. The release job now calls the publish workflow directly
+  (`workflow_call`), so cutting a release actually ships it.
+- **Floating major tag was hardcoded to `v1`.** The moment the major version was
+  bumped, `v1` was force-moved onto a 2.x release, silently serving v2 to everyone
+  pinned to `@v1`. The tag is now derived from the version (`2.0.0` → `v2`), `v2`
+  has been created, and `v1` has been restored to the last 1.x release (v1.3.0).
+  README and CI/CD docs now reference `@v2`.
+
 ## [2.0.0] — 2026-08-17
 
 ### Breaking

@@ -198,14 +198,11 @@ jobs:
     name: Publish to PyPI
     needs: release
     if: needs.release.outputs.released == 'true'
-    # `timeout-minutes` is not a valid key on a job that calls a reusable
-    # workflow (`uses:`) — GitHub rejects the whole file if it's present here.
-    # The callee's own job carries its own default timeout instead.
-    # Tags pushed with the default GITHUB_TOKEN do NOT trigger other workflows,
-    # so the `on: push: tags:` trigger in publish-pypi.yml never fired for a
-    # release cut by the job above. Calling the workflow directly is what makes
-    # a release actually reach PyPI. Only the one secret the callee declares is
-    # passed through — not the whole repository secret set.
+    # No `timeout-minutes` here: it's not a valid key on a `uses:` job — GitHub
+    # rejects the whole file if it's present (the callee sets its own).
+    # Tag pushes made with the default GITHUB_TOKEN can't trigger other
+    # workflows, so we call publish-pypi.yml directly instead of relying on its
+    # `push: tags:` trigger, passing only the one secret it declares.
     uses: ./.github/workflows/publish-pypi.yml
     permissions:
       id-token: write
